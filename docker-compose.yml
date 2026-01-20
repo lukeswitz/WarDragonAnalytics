@@ -12,7 +12,7 @@ services:
       TIMESCALEDB_TELEMETRY: "off"
     volumes:
       - timescale-data:/var/lib/postgresql/data
-      - ./timescaledb/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./timescaledb:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:5432:5432"
     networks:
@@ -117,7 +117,7 @@ services:
         max-file: "3"
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.4.1
     container_name: wardragon-grafana
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
@@ -125,12 +125,6 @@ services:
       GF_SECURITY_SECRET_KEY: ${GRAFANA_SECRET_KEY}
       GF_INSTALL_PLUGINS: grafana-worldmap-panel,grafana-piechart-panel
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
-      GF_DATABASE_TYPE: postgres
-      GF_DATABASE_HOST: timescaledb:5432
-      GF_DATABASE_NAME: grafana
-      GF_DATABASE_USER: wardragon
-      GF_DATABASE_PASSWORD: ${DB_PASSWORD}
-      GF_DATABASE_SSL_MODE: disable
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
@@ -139,6 +133,7 @@ services:
       GF_SECURITY_DISABLE_GRAVATAR: "true"
       GF_SECURITY_COOKIE_SECURE: "true"
       GF_SECURITY_COOKIE_SAMESITE: "strict"
+      DB_PASSWORD: ${DB_PASSWORD}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro

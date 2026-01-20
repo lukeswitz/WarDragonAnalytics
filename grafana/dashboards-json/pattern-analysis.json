@@ -1,0 +1,669 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "Drones that appeared multiple times in the selected time range - potential surveillance or repeated operations",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Appearances"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Appearances"
+          }
+        ]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH drone_appearances AS (\n  SELECT \n    drone_id,\n    MIN(time) AS first_seen,\n    MAX(time) AS last_seen,\n    COUNT(DISTINCT time_bucket('5 minutes', time)) AS appearances,\n    ARRAY_AGG(DISTINCT kit_id) AS kits,\n    ARRAY_AGG(DISTINCT COALESCE(rid_make, 'Unknown')) AS makes\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n    AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n  GROUP BY drone_id\n  HAVING COUNT(DISTINCT time_bucket('5 minutes', time)) > 1\n)\nSELECT \n  drone_id AS \"Drone ID\",\n  appearances AS \"Appearances\",\n  first_seen AS \"First Seen\",\n  last_seen AS \"Last Seen\",\n  EXTRACT(EPOCH FROM (last_seen - first_seen))/60 AS \"Duration (min)\",\n  ARRAY_TO_STRING(kits, ', ') AS \"Kits\",\n  ARRAY_TO_STRING(makes, ', ') AS \"Make\"\nFROM drone_appearances\nORDER BY appearances DESC, last_seen DESC\nLIMIT 50;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Repeated Drone IDs",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "Potential operator reuse detected via matching operator_id fields or pilots in close proximity (<50m) with different drones",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 4
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Drones"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Drones"
+          }
+        ]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "-- Find operators controlling multiple drones via operator_id match\nWITH operator_matches AS (\n  SELECT \n    operator_id AS identifier,\n    'operator_id' AS method,\n    COUNT(DISTINCT drone_id) AS drone_count,\n    ARRAY_AGG(DISTINCT drone_id) AS drones,\n    MIN(time) AS first_seen,\n    MAX(time) AS last_seen\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n    AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n    AND operator_id IS NOT NULL\n    AND operator_id != ''\n  GROUP BY operator_id\n  HAVING COUNT(DISTINCT drone_id) > 1\n),\n-- Find pilots in close proximity with different drones\npilot_proximity AS (\n  SELECT \n    CONCAT('Pilot@', ROUND(d1.pilot_lat::NUMERIC, 4), ',', ROUND(d1.pilot_lon::NUMERIC, 4)) AS identifier,\n    'proximity' AS method,\n    COUNT(DISTINCT d1.drone_id) AS drone_count,\n    ARRAY_AGG(DISTINCT d1.drone_id) AS drones,\n    MIN(d1.time) AS first_seen,\n    MAX(d1.time) AS last_seen\n  FROM drones d1\n  WHERE d1.time >= $__timeFrom()\n    AND d1.time <= $__timeTo()\n    AND ($kit_filter = 'All' OR d1.kit_id = $kit_filter)\n    AND d1.pilot_lat IS NOT NULL\n    AND d1.pilot_lon IS NOT NULL\n  GROUP BY ROUND(d1.pilot_lat::NUMERIC, 4), ROUND(d1.pilot_lon::NUMERIC, 4)\n  HAVING COUNT(DISTINCT d1.drone_id) > 1\n)\nSELECT \n  identifier AS \"Operator/Location\",\n  method AS \"Detection Method\",\n  drone_count AS \"Drones\",\n  ARRAY_TO_STRING(drones, ', ') AS \"Drone IDs\",\n  first_seen AS \"First Seen\",\n  last_seen AS \"Last Seen\"\nFROM (\n  SELECT * FROM operator_matches\n  UNION ALL\n  SELECT * FROM pilot_proximity\n) combined\nORDER BY drone_count DESC, last_seen DESC\nLIMIT 50;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Operator Reuse Detection",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "FPV frequencies reused across multiple detections - may indicate recurring operations or patterns",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.8,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT \n  CONCAT(freq_mhz::INTEGER, ' MHz') AS \"Frequency\",\n  detection_type AS \"Type\",\n  COUNT(*) AS \"Detections\",\n  COUNT(DISTINCT kit_id) AS \"Kits\"\nFROM signals\nWHERE time >= $__timeFrom()\n  AND time <= $__timeTo()\n  AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\nGROUP BY freq_mhz, detection_type\nORDER BY COUNT(*) DESC\nLIMIT 15;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Frequency Reuse Patterns",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "Groups of drones detected together within similar time windows and locations - potential coordinated activity",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Group Size"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Group Size"
+          }
+        ]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "-- Detect coordinated activity: multiple drones in same time window\nWITH time_windows AS (\n  SELECT \n    time_bucket('5 minutes', time) AS window,\n    COUNT(DISTINCT drone_id) AS drone_count,\n    ARRAY_AGG(DISTINCT drone_id) AS drones,\n    ARRAY_AGG(DISTINCT kit_id) AS kits,\n    MIN(time) AS start_time,\n    MAX(time) AS end_time\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n    AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n  GROUP BY time_bucket('5 minutes', time)\n  HAVING COUNT(DISTINCT drone_id) >= 2\n)\nSELECT \n  CONCAT('Group-', ROW_NUMBER() OVER (ORDER BY start_time DESC)) AS \"Group ID\",\n  drone_count AS \"Group Size\",\n  ARRAY_TO_STRING(drones, ', ') AS \"Drone IDs\",\n  ARRAY_TO_STRING(kits, ', ') AS \"Detected By\",\n  start_time AS \"Start Time\",\n  end_time AS \"End Time\"\nFROM time_windows\nORDER BY drone_count DESC, start_time DESC\nLIMIT 50;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Coordinated Activity Detection",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "Map visualization of drone positions colored by track type. Use to identify flight patterns, perimeter sweeps, and grid patterns.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "options": {
+        "basemap": {
+          "config": {},
+          "name": "Layer 0",
+          "type": "default"
+        },
+        "controls": {
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showDebug": false,
+          "showMeasure": false,
+          "showScale": false,
+          "showZoom": true
+        },
+        "layers": [
+          {
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "field": "track_type",
+                  "fixed": "dark-green"
+                },
+                "opacity": 0.6,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": 0,
+                  "mode": "mod"
+                },
+                "size": {
+                  "fixed": 5,
+                  "max": 15,
+                  "min": 2
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "coords": {
+                "latitude": "lat",
+                "longitude": "lon"
+              }
+            },
+            "name": "Drone Positions",
+            "tooltip": true,
+            "type": "markers"
+          }
+        ],
+        "tooltip": {
+          "mode": "details"
+        },
+        "view": {
+          "allLayers": true,
+          "id": "zero",
+          "lat": 0,
+          "lon": 0,
+          "zoom": 2
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT \n  time,\n  drone_id,\n  lat,\n  lon,\n  alt,\n  speed,\n  heading,\n  track_type,\n  COALESCE(rid_make, 'Unknown') AS make\nFROM drones\nWHERE time >= $__timeFrom()\n  AND time <= $__timeTo()\n  AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n  AND lat IS NOT NULL\n  AND lon IS NOT NULL\nORDER BY time DESC\nLIMIT 5000;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Flight Pattern Map",
+      "type": "geomap"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "wardragon",
+    "pattern",
+    "intelligence"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "All"
+        },
+        "datasource": {
+          "type": "postgres",
+          "uid": "timescaledb"
+        },
+        "definition": "SELECT 'All' UNION SELECT kit_id FROM kits ORDER BY 1;",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Kit",
+        "multi": false,
+        "name": "kit_filter",
+        "options": [],
+        "query": "SELECT 'All' UNION SELECT kit_id FROM kits ORDER BY 1;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "timezone": "",
+  "title": "Pattern Analysis",
+  "uid": "wardragon-pattern-analysis",
+  "version": 1,
+  "weekStart": ""
+}

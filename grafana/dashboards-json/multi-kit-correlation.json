@@ -1,0 +1,531 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "Drones detected by multiple kits simultaneously - opportunities for triangulation and improved position accuracy",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kits"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RSSI Spread"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dB"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Kits"
+          }
+        ]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "-- Find drones detected by multiple kits within 1-minute windows\nWITH multi_kit_detections AS (\n  SELECT \n    drone_id,\n    time_bucket('1 minute', time) AS time_window,\n    COUNT(DISTINCT kit_id) AS kit_count,\n    ARRAY_AGG(DISTINCT kit_id) AS kits,\n    ARRAY_AGG(DISTINCT CONCAT(kit_id, ':', rssi, 'dBm')) AS rssi_by_kit,\n    MAX(rssi) - MIN(rssi) AS rssi_spread,\n    AVG(lat) AS avg_lat,\n    AVG(lon) AS avg_lon,\n    ARRAY_AGG(DISTINCT COALESCE(rid_make, 'Unknown')) AS makes\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n    AND rssi IS NOT NULL\n  GROUP BY drone_id, time_bucket('1 minute', time)\n  HAVING COUNT(DISTINCT kit_id) >= 2\n)\nSELECT \n  drone_id AS \"Drone ID\",\n  kit_count AS \"Kits\",\n  ARRAY_TO_STRING(kits, ', ') AS \"Kit IDs\",\n  ARRAY_TO_STRING(rssi_by_kit, ', ') AS \"RSSI Comparison\",\n  rssi_spread AS \"RSSI Spread\",\n  ROUND(avg_lat::NUMERIC, 5) AS \"Avg Lat\",\n  ROUND(avg_lon::NUMERIC, 5) AS \"Avg Lon\",\n  time_window AS \"Time Window\",\n  ARRAY_TO_STRING(makes, ', ') AS \"Make\"\nFROM multi_kit_detections\nORDER BY kit_count DESC, time_window DESC\nLIMIT 100;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Multi-Kit Detections (Triangulation Opportunities)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "Geographic coverage areas of all kits showing overlap zones where triangulation is possible",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "id": 2,
+      "options": {
+        "basemap": {
+          "config": {},
+          "name": "Layer 0",
+          "type": "default"
+        },
+        "controls": {
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showDebug": false,
+          "showMeasure": false,
+          "showScale": false,
+          "showZoom": true
+        },
+        "layers": [
+          {
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "field": "kit_id",
+                  "fixed": "dark-green"
+                },
+                "opacity": 0.4,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": 0,
+                  "mode": "mod"
+                },
+                "size": {
+                  "field": "detections",
+                  "fixed": 5,
+                  "max": 20,
+                  "min": 5
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "mode": "coords",
+              "coords": {
+                "latitude": "lat",
+                "longitude": "lon"
+              }
+            },
+            "name": "Kit Coverage",
+            "tooltip": true,
+            "type": "markers"
+          }
+        ],
+        "tooltip": {
+          "mode": "details"
+        },
+        "view": {
+          "allLayers": true,
+          "id": "zero",
+          "lat": 0,
+          "lon": 0,
+          "zoom": 2
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "-- Show kit positions and detection coverage\nWITH kit_coverage AS (\n  SELECT \n    sh.kit_id,\n    sh.lat,\n    sh.lon,\n    sh.alt,\n    COUNT(DISTINCT d.drone_id) AS detections\n  FROM system_health sh\n  LEFT JOIN drones d ON sh.kit_id = d.kit_id \n    AND d.time >= $__timeFrom()\n    AND d.time <= $__timeTo()\n  WHERE sh.time >= $__timeFrom()\n    AND sh.time <= $__timeTo()\n    AND sh.lat IS NOT NULL\n    AND sh.lon IS NOT NULL\n  GROUP BY sh.kit_id, sh.lat, sh.lon, sh.alt\n)\nSELECT \n  kit_id,\n  AVG(lat) AS lat,\n  AVG(lon) AS lon,\n  AVG(alt) AS alt,\n  SUM(detections) AS detections\nFROM kit_coverage\nGROUP BY kit_id;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Kit Coverage Overlap Map",
+      "type": "geomap"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "Detection density heatmap showing areas with highest drone activity across all kits",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "id": 3,
+      "options": {
+        "calculate": false,
+        "cellGap": 2,
+        "cellValues": {},
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Oranges",
+          "steps": 128
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-9
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "tooltip": {
+          "show": true,
+          "yHistogram": false
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "reverse": false
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "-- Create heatmap grid of detection density\nWITH grid AS (\n  SELECT \n    time_bucket('10 minutes', time) AS time,\n    ROUND(lat::NUMERIC, 2) AS lat_grid,\n    ROUND(lon::NUMERIC, 2) AS lon_grid,\n    COUNT(*) AS detections\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n    AND lat IS NOT NULL\n    AND lon IS NOT NULL\n  GROUP BY time_bucket('10 minutes', time), ROUND(lat::NUMERIC, 2), ROUND(lon::NUMERIC, 2)\n)\nSELECT \n  time,\n  CONCAT(lat_grid, ',', lon_grid) AS location,\n  detections\nFROM grid\nORDER BY time;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Detection Density Heatmap",
+      "type": "heatmap"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "Timeline showing when drones transition between kit coverage areas - useful for tracking movement patterns",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "-- Track kit handoffs: show RSSI over time for drones detected by multiple kits\nWITH multi_kit_drones AS (\n  SELECT DISTINCT drone_id\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n  GROUP BY drone_id\n  HAVING COUNT(DISTINCT kit_id) >= 2\n  LIMIT 10  -- Limit to top 10 for readability\n)\nSELECT \n  time_bucket('30 seconds', d.time) AS time,\n  CONCAT(d.drone_id, ' @ ', d.kit_id) AS metric,\n  AVG(d.rssi) AS value\nFROM drones d\nINNER JOIN multi_kit_drones mkd ON d.drone_id = mkd.drone_id\nWHERE d.time >= $__timeFrom()\n  AND d.time <= $__timeTo()\n  AND d.rssi IS NOT NULL\nGROUP BY time_bucket('30 seconds', d.time), d.drone_id, d.kit_id\nORDER BY time;",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Kit Handoff Tracking (RSSI over Time)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": [
+    "wardragon",
+    "multi-kit",
+    "correlation"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "timezone": "",
+  "title": "Multi-Kit Correlation",
+  "uid": "wardragon-multi-kit-correlation",
+  "version": 1,
+  "weekStart": ""
+}

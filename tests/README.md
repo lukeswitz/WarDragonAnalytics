@@ -534,6 +534,421 @@ If you encounter issues with the test suite:
 
 ---
 
+## Phase 2 Test Data Generator
+
+The Phase 2 test data generator (`tests/generate_test_data.py`) creates realistic test scenarios with specific patterns for testing tactical dashboards and pattern detection features.
+
+### Quick Start
+
+```bash
+# Generate all test scenarios (recommended for first-time setup)
+python tests/generate_test_data.py --scenario all
+
+# Generate specific scenario
+python tests/generate_test_data.py --scenario coordinated --count 5
+
+# Preview without inserting (dry run)
+python tests/generate_test_data.py --scenario normal --dry-run
+
+# Clean all test data
+python tests/generate_test_data.py --clean
+```
+
+### Available Scenarios
+
+#### 1. Normal Operations (`--scenario normal`)
+**Purpose**: Baseline operations for testing dashboards with typical activity
+
+**Generates**:
+- 3 test kits (test-kit-001, test-kit-002, test-kit-003)
+- 20-30 random drones with realistic flight patterns
+- Altitude: 50-150m (typical consumer drone range)
+- Speed: 5-15 m/s (typical flight speeds)
+- Data spread over last 48 hours
+- System health metrics for all kits
+
+**Use Case**: Testing basic dashboards, verifying data collection, establishing baseline
+
+**Example**:
+```bash
+python tests/generate_test_data.py --scenario normal
+```
+
+#### 2. Repeated Drone (`--scenario repeated`)
+**Purpose**: Simulate surveillance pattern with same drone appearing multiple times
+
+**Generates**:
+- Same drone ID appearing 3-5 times over 24 hours
+- Different locations each time (within same general area)
+- Same operator ID across all appearances
+- Realistic flight durations (15-30 minutes each)
+
+**Use Case**: Testing repeated drone detection, surveillance pattern recognition
+
+**Parameters**:
+- `--count N`: Number of appearances (default: 5)
+- `--drone-id ID`: Specific drone ID to use (default: auto-generated)
+
+**Example**:
+```bash
+# 5 appearances of auto-generated drone
+python tests/generate_test_data.py --scenario repeated --count 5
+
+# 3 appearances of specific drone
+python tests/generate_test_data.py --scenario repeated --count 3 --drone-id SURVEILLANCE-12345
+```
+
+#### 3. Coordinated Activity (`--scenario coordinated`)
+**Purpose**: Simulate swarm/coordinated drone activity
+
+**Generates**:
+- 4-6 drones appearing together within 500m
+- All drones appear within 5-minute window
+- Similar altitudes (80-120m) and speeds (8-12 m/s)
+- Coordinated flight patterns around central point
+
+**Use Case**: Testing swarm detection, coordinated activity alerts
+
+**Parameters**:
+- `--count N`: Number of swarms to generate (default: 1)
+
+**Example**:
+```bash
+# Generate 3 separate swarm events
+python tests/generate_test_data.py --scenario coordinated --count 3
+```
+
+#### 4. Operator Reuse (`--scenario operator`)
+**Purpose**: Simulate operator using multiple drones or clustered pilot locations
+
+**Generates**:
+- **Part A**: Same operator_id across 3 different drones at different times
+- **Part B**: 3 different operators with pilots within 50m of each other
+
+**Use Case**: Testing operator reuse detection, pilot proximity analysis
+
+**Example**:
+```bash
+python tests/generate_test_data.py --scenario operator
+```
+
+#### 5. Multi-Kit Detections (`--scenario multikit`)
+**Purpose**: Simulate triangulation opportunities with multiple kits
+
+**Generates**:
+- 3 kits positioned in triangular formation (5km apart)
+- 5 drones flying in center area (visible to all kits)
+- RSSI values calculated based on distance from each kit
+- Simultaneous detections from multiple kits
+
+**Use Case**: Testing multi-kit correlation, triangulation visualization, RSSI-based distance estimation
+
+**Example**:
+```bash
+python tests/generate_test_data.py --scenario multikit
+```
+
+#### 6. Anomalies (`--scenario anomalies`)
+**Purpose**: Simulate unusual flight behavior for anomaly detection testing
+
+**Generates Three Types of Anomalies**:
+
+1. **Speed Spike**:
+   - Drone accelerates from 5 m/s to 40 m/s in 10 seconds
+   - Returns to normal speed after spike
+
+2. **Rapid Altitude Drop**:
+   - Drone descends from 100m to 10m in 20 seconds
+   - Simulates emergency landing or attack approach
+
+3. **Erratic Heading Changes**:
+   - Random heading changes every 5 seconds
+   - Simulates GPS jamming or operator confusion
+
+**Use Case**: Testing anomaly detection algorithms, alert thresholds
+
+**Example**:
+```bash
+python tests/generate_test_data.py --scenario anomalies
+```
+
+#### 7. FPV Signals (`--scenario fpv`)
+**Purpose**: Simulate 5.8GHz FPV signal detections
+
+**Generates**:
+- FPV signals at common frequencies (5740, 5760, 5800, 5820, 5840, 5860 MHz)
+- Power levels: -90 to -60 dBm (realistic signal strengths)
+- Intermittent detections (30% probability per 10-second interval)
+- Both analog and DJI digital signal types
+- Data spread over last 6 hours
+
+**Use Case**: Testing FPV signal visualization, frequency analysis
+
+**Example**:
+```bash
+python tests/generate_test_data.py --scenario fpv
+```
+
+#### 8. All Scenarios (`--scenario all`)
+**Purpose**: Generate comprehensive test dataset with all pattern types
+
+**Generates**:
+- Normal operations (baseline)
+- 5 repeated drone appearances
+- 3 coordinated swarms
+- Operator reuse patterns
+- Multi-kit detections
+- All three anomaly types
+- FPV signal detections
+
+**Use Case**: Initial setup, comprehensive testing, demo environment
+
+**Example**:
+```bash
+python tests/generate_test_data.py --scenario all
+```
+
+### Command-Line Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--scenario {all,normal,repeated,coordinated,operator,multikit,anomalies,fpv}` | Scenario to generate | Required |
+| `--count N` | Count parameter for scenarios (appearances, swarms, etc.) | 5 |
+| `--drone-id ID` | Specific drone ID for repeated scenario | Auto-generated |
+| `--clean` | Clean all test data from database | N/A |
+| `--dry-run` | Preview without inserting data | N/A |
+| `--db-url URL` | Database URL | `DATABASE_URL` env or localhost |
+
+### Database Connection
+
+The generator uses the `DATABASE_URL` environment variable if set, otherwise defaults to:
+```
+postgresql://wardragon:test123@localhost:5432/wardragon
+```
+
+**Custom database URL**:
+```bash
+python tests/generate_test_data.py --scenario normal --db-url "postgresql://user:pass@host:port/database"
+```
+
+**Or set environment variable**:
+```bash
+export DATABASE_URL="postgresql://wardragon:mypassword@localhost:5432/wardragon"
+python tests/generate_test_data.py --scenario all
+```
+
+### Dry Run Mode
+
+Preview what would be generated without actually inserting data:
+
+```bash
+python tests/generate_test_data.py --scenario normal --dry-run
+```
+
+Output:
+```
+[DRY RUN] Would insert 3 kits
+[DRY RUN] Would insert 1234 drone records
+[DRY RUN] Would insert 456 health records
+
+[DRY RUN] No data was actually inserted
+```
+
+### Cleaning Test Data
+
+Remove all test data (kits starting with `test-kit-`):
+
+```bash
+python tests/generate_test_data.py --clean
+```
+
+Output:
+```
+Cleaned test data:
+  Kits: 3
+  Drones: 5432
+  Signals: 876
+  Health: 543
+```
+
+### Test Data Details
+
+#### Kit Naming
+All test kits are named `test-kit-001`, `test-kit-002`, etc., making them easy to identify and clean.
+
+#### Drone IDs
+- Normal drones: `DJI123456`, `AUT234567`, etc.
+- Surveillance drones: `SURVEILLANCE-12345`
+- Swarm drones: `SWARM-01-01`, `SWARM-01-02`, etc.
+- Anomaly drones: `ANOMALY-SPEED-1234`, `ANOMALY-ALT-5678`, etc.
+
+#### Timestamps
+- Data is generated with realistic timestamps spread over time windows
+- Normal scenario: Last 48 hours
+- Repeated scenario: Last 24 hours
+- Coordinated scenario: Last 24 hours
+- Anomalies scenario: Last 1-3 hours
+- FPV signals: Last 6 hours
+
+#### Realistic Patterns
+- Flight speeds: 5-15 m/s (normal), up to 40 m/s (anomalies)
+- Altitudes: 50-150m (normal), 10-150m (anomalies)
+- RSSI values: -90 to -50 dBm (distance-based)
+- GPS coordinates: Centered around San Francisco Bay Area (configurable)
+
+### Usage in Testing
+
+#### Unit Tests
+Use test data generator to populate database before running integration tests:
+
+```bash
+# Generate test data
+python tests/generate_test_data.py --scenario all
+
+# Run integration tests
+pytest -m integration
+```
+
+#### Dashboard Testing
+Generate specific scenarios to test dashboard features:
+
+```bash
+# Test repeated drone detection
+python tests/generate_test_data.py --scenario repeated --count 5
+
+# Open Grafana Pattern Analysis dashboard
+# Verify "Repeated Drone IDs" panel shows the generated drone
+```
+
+#### API Testing
+Test pattern detection APIs with realistic data:
+
+```bash
+# Generate swarm data
+python tests/generate_test_data.py --scenario coordinated --count 3
+
+# Test API endpoint
+curl http://localhost:8090/api/patterns/coordinated?hours=24
+```
+
+### Performance Considerations
+
+**Generation Speed**:
+- Normal scenario: ~10-30 seconds (generates 1000-3000 drone records)
+- All scenarios: ~60-120 seconds (generates 5000-10000 records)
+
+**Database Impact**:
+- Uses batch inserts (1000 records per batch) for efficiency
+- Includes progress indicators for large datasets
+- ON CONFLICT clauses prevent duplicate key errors
+
+**Clean Up**:
+Always clean test data before re-generating to avoid conflicts:
+```bash
+python tests/generate_test_data.py --clean
+python tests/generate_test_data.py --scenario all
+```
+
+### Troubleshooting
+
+#### psycopg2 Not Installed
+```
+Error: psycopg2 not installed. Install with: pip install psycopg2-binary
+```
+
+**Solution**:
+```bash
+pip install psycopg2-binary
+# or
+pip install -r app/requirements.txt
+```
+
+#### Database Connection Failed
+```
+Error: could not connect to server: Connection refused
+```
+
+**Solution**:
+- Verify TimescaleDB is running: `docker-compose ps timescaledb`
+- Check DATABASE_URL or --db-url parameter
+- Ensure firewall allows connection to port 5432
+
+#### No Data Showing in Dashboards After Generation
+**Check**:
+1. Verify data was inserted:
+   ```sql
+   docker exec wardragon-timescaledb psql -U wardragon -d wardragon -c "SELECT COUNT(*) FROM drones WHERE kit_id LIKE 'test-kit-%';"
+   ```
+2. Check Grafana time range matches generated data timeframe
+3. Refresh Grafana dashboards (Ctrl+R or click refresh button)
+
+### Advanced Usage
+
+#### Custom Time Ranges
+Edit the script to customize time ranges:
+
+```python
+# In scenario_normal():
+start_time = end_time - timedelta(hours=48)  # Change to 72 for 3 days
+```
+
+#### Custom Locations
+Change the base GPS coordinates:
+
+```python
+# At top of script:
+BASE_LAT = 37.7749  # Change to your area
+BASE_LON = -122.4194
+```
+
+#### Custom Drone Models
+Add your own drone makes/models:
+
+```python
+DRONE_MAKES_MODELS = [
+    ("DJI", "Mini 3 Pro"),
+    ("YourBrand", "YourModel"),
+    # ... add more
+]
+```
+
+### Examples
+
+#### Scenario 1: Demo Environment Setup
+```bash
+# Clean any existing test data
+python tests/generate_test_data.py --clean
+
+# Generate comprehensive dataset
+python tests/generate_test_data.py --scenario all
+
+# Verify in Grafana
+# Open http://localhost:3000
+# Navigate to "Tactical Overview" dashboard
+```
+
+#### Scenario 2: Test Surveillance Detection
+```bash
+# Generate repeated drone with 10 appearances
+python tests/generate_test_data.py --scenario repeated --count 10 --drone-id TEST-SURVEILLANCE-001
+
+# Test API
+curl "http://localhost:8090/api/patterns/repeated-drones?hours=24"
+
+# Should return TEST-SURVEILLANCE-001 with appearance_count=10
+```
+
+#### Scenario 3: Test Swarm Alert System
+```bash
+# Generate multiple swarms
+python tests/generate_test_data.py --scenario coordinated --count 5
+
+# Verify in Grafana Pattern Analysis dashboard
+# "Coordinated Activity" panel should show 5 groups
+```
+
+---
+
 ## Collector Unit Tests
 
 The `test_collector.py` module provides comprehensive unit tests for the collector service (`app/collector.py`).

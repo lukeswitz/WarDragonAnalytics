@@ -2,14 +2,27 @@
 
 Complete guide to all documentation for the WarDragon Analytics project.
 
+**Last Updated:** 2026-01-20 (Phase 2 Documentation Consolidation)
+
+## Recent Updates
+
+**Phase 2 Documentation Consolidation** (2026-01-20):
+- Created comprehensive user-facing guides: API_REFERENCE.md, GRAFANA_DASHBOARDS.md, TROUBLESHOOTING.md
+- Archived agent-specific implementation documents to `docs/archive/`
+- Moved development-specific documentation to `docs/development/`
+- Updated README.md with clear Phase 2 status and documentation navigation
+- Consolidated duplicate quick reference files
+
+All user-facing documentation is now in the root directory. Development and archived files are organized in subdirectories.
+
 ## Quick Start
 
 **New to WarDragon Analytics? Start here:**
 
-1. Read [README.md](README.md) - Project overview
-2. Read [DOCKER_COMPOSE_SUMMARY.md](DOCKER_COMPOSE_SUMMARY.md) - Complete deployment summary
-3. Run `./quickstart.sh` - Automated setup
-4. Read [DEPLOYMENT.md](DEPLOYMENT.md) - Detailed deployment guide
+1. Read [README.md](README.md) - Project overview and Phase 2 features
+2. Run `./quickstart.sh` - Automated setup
+3. Read [DEPLOYMENT.md](DEPLOYMENT.md) - Detailed deployment guide
+4. Read [OPERATOR_GUIDE.md](OPERATOR_GUIDE.md) - Tactical operations workflows
 
 ## Documentation Overview
 
@@ -21,12 +34,26 @@ Complete guide to all documentation for the WarDragon Analytics project.
 **Audience:** Everyone
 **When to read:** First document to read
 
-#### [DOCKER_COMPOSE_SUMMARY.md](DOCKER_COMPOSE_SUMMARY.md)
-**Purpose:** Complete Docker setup summary
-**Topics:** All files created, architecture, quick start, common operations
-**Audience:** DevOps, developers, system administrators
-**When to read:** Before deploying for the first time
-**Size:** 11.2 KB - Comprehensive overview
+#### [API_REFERENCE.md](API_REFERENCE.md)
+**Purpose:** Complete REST API documentation
+**Topics:** All Phase 1 and Phase 2 endpoints, request/response examples, integration guide
+**Audience:** Developers, integrators, operators
+**When to read:** When using the API or building integrations
+**Size:** ~60 KB - Comprehensive API guide
+
+#### [GRAFANA_DASHBOARDS.md](GRAFANA_DASHBOARDS.md)
+**Purpose:** Grafana dashboard usage guide
+**Topics:** All 4 dashboards, panel interpretation, operational workflows, troubleshooting
+**Audience:** Operators, analysts, command center staff
+**When to read:** When using Grafana for tactical operations
+**Size:** ~50 KB - Complete dashboard guide
+
+#### [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+**Purpose:** Common issues and solutions
+**Topics:** Installation, database, API, Grafana, performance issues, recovery procedures
+**Audience:** System administrators, operators, support staff
+**When to read:** When experiencing issues or errors
+**Size:** ~45 KB - Comprehensive troubleshooting guide
 
 ### 🚀 Deployment Documentation
 
@@ -75,7 +102,7 @@ Complete guide to all documentation for the WarDragon Analytics project.
 
 ### 🐳 Docker Documentation
 
-#### [DOCKER_SETUP.md](DOCKER_SETUP.md)
+#### [docs/development/DOCKER_SETUP.md](docs/development/DOCKER_SETUP.md)
 **Purpose:** Complete Docker configuration reference
 **Topics:**
 - Service architecture
@@ -90,10 +117,11 @@ Complete guide to all documentation for the WarDragon Analytics project.
 **Audience:** Docker administrators, DevOps engineers
 **When to read:** When working with Docker configuration
 **Size:** 10.5 KB
+**Location:** Moved to development docs (technical reference)
 
 ### ✅ Verification Documentation
 
-#### [SETUP_VERIFICATION.md](SETUP_VERIFICATION.md)
+#### [docs/development/SETUP_VERIFICATION.md](docs/development/SETUP_VERIFICATION.md)
 **Purpose:** Setup verification and testing
 **Topics:**
 - File verification checklist
@@ -106,6 +134,7 @@ Complete guide to all documentation for the WarDragon Analytics project.
 **Audience:** QA, DevOps, system administrators
 **When to read:** After deployment, before production
 **Size:** 13.5 KB
+**Location:** Moved to development docs (implementation reference)
 
 ### 🏗️ Architecture Documentation
 
@@ -363,7 +392,37 @@ Located in `scripts/` directory:
 | .gitignore | 1.4 KB | Configuration |
 | config/kits.yaml | 1.3 KB | Configuration |
 
-**Total:** ~75 KB of comprehensive documentation and configuration
+**Total (Active Documentation):** ~200 KB of comprehensive user documentation
+**Archived:** ~150 KB of implementation and development documentation (see `docs/archive/`)
+
+---
+
+## Archived Documentation
+
+Phase 2 implementation documents and agent deliverables have been archived to `docs/archive/`. These include:
+
+- Phase 2 delivery summaries (agent-specific)
+- Implementation guides for agents
+- Verification checklists
+- Development work logs
+- Code metrics
+
+See [docs/archive/README.md](docs/archive/README.md) for complete inventory and guidance on when to reference archived files.
+
+## Development Documentation
+
+Technical and development-specific documentation moved to `docs/development/`:
+
+- **DOCKER_SETUP.md** - Docker configuration details
+- **SETUP_VERIFICATION.md** - Setup verification procedures
+- **COLLECTOR_CODE_REFERENCE.md** - Collector implementation reference
+- **COLLECTOR_IMPLEMENTATION.md** - Collector technical details
+
+---
+
+## Active Documentation (Root Directory)
+
+All user-facing documentation remains in the root directory for easy access.
 
 ## Documentation Standards
 

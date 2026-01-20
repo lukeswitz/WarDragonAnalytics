@@ -3,353 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WarDragon Analytics</title>
+    <title>WarDragon Analytics - Tactical Operations</title>
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet Draw CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
 
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        /* Header */
-        .header {
-            background: #2a2a2a;
-            padding: 12px 20px;
-            border-bottom: 2px solid #00ff00;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .header h1 {
-            font-size: 20px;
-            color: #00ff00;
-            display: flex;
-            align-items: center;
-        }
-
-        .header h1::before {
-            content: '▶';
-            margin-right: 10px;
-            color: #ff4444;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-
-        .header-controls {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }
-
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 13px;
-        }
-
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #00ff00;
-            animation: blink 1s infinite;
-        }
-
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-
-        /* Main container */
-        .container {
-            display: flex;
-            height: calc(100vh - 50px);
-        }
-
-        /* Sidebar */
-        .sidebar {
-            width: 280px;
-            background: #2a2a2a;
-            border-right: 1px solid #3a3a3a;
-            padding: 20px;
-            overflow-y: auto;
-        }
-
-        .sidebar h2 {
-            font-size: 16px;
-            color: #00ff00;
-            margin-bottom: 15px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .filter-section {
-            margin-bottom: 25px;
-        }
-
-        .filter-section label {
-            display: block;
-            margin-bottom: 8px;
-            font-size: 12px;
-            color: #aaa;
-            text-transform: uppercase;
-        }
-
-        .filter-section select,
-        .filter-section input {
-            width: 100%;
-            padding: 8px;
-            background: #1a1a1a;
-            border: 1px solid #3a3a3a;
-            color: #e0e0e0;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-
-        .filter-section select:focus,
-        .filter-section input:focus {
-            outline: none;
-            border-color: #00ff00;
-        }
-
-        .checkbox-group {
-            margin-top: 8px;
-        }
-
-        .checkbox-group label {
-            display: flex;
-            align-items: center;
-            margin-bottom: 8px;
-            font-size: 13px;
-            text-transform: none;
-            color: #e0e0e0;
-            cursor: pointer;
-        }
-
-        .checkbox-group input[type="checkbox"] {
-            width: auto;
-            margin-right: 8px;
-        }
-
-        .btn {
-            width: 100%;
-            padding: 10px;
-            background: #00ff00;
-            color: #1a1a1a;
-            border: none;
-            border-radius: 4px;
-            font-weight: bold;
-            cursor: pointer;
-            font-size: 13px;
-            text-transform: uppercase;
-            margin-bottom: 10px;
-        }
-
-        .btn:hover {
-            background: #00dd00;
-        }
-
-        .btn-secondary {
-            background: #3a3a3a;
-            color: #e0e0e0;
-        }
-
-        .btn-secondary:hover {
-            background: #4a4a4a;
-        }
-
-        /* Main content */
-        .main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* Map container */
-        .map-container {
-            flex: 1;
-            position: relative;
-        }
-
-        #map {
-            width: 100%;
-            height: 100%;
-        }
-
-        /* Table container */
-        .table-container {
-            height: 250px;
-            background: #2a2a2a;
-            border-top: 1px solid #3a3a3a;
-            overflow: auto;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        }
-
-        table thead {
-            position: sticky;
-            top: 0;
-            background: #1a1a1a;
-            z-index: 10;
-        }
-
-        table th {
-            padding: 10px;
-            text-align: left;
-            color: #00ff00;
-            font-weight: bold;
-            text-transform: uppercase;
-            border-bottom: 2px solid #00ff00;
-        }
-
-        table td {
-            padding: 8px 10px;
-            border-bottom: 1px solid #3a3a3a;
-        }
-
-        table tbody tr:hover {
-            background: #333;
-            cursor: pointer;
-        }
-
-        .track-row {
-            transition: background 0.2s;
-        }
-
-        /* Stats badges */
-        .stats-container {
-            display: flex;
-            gap: 15px;
-            padding: 15px 20px;
-            background: #2a2a2a;
-            border-bottom: 1px solid #3a3a3a;
-        }
-
-        .stat-badge {
-            display: flex;
-            flex-direction: column;
-            padding: 10px 15px;
-            background: #1a1a1a;
-            border-radius: 4px;
-            border-left: 3px solid #00ff00;
-        }
-
-        .stat-label {
-            font-size: 11px;
-            color: #aaa;
-            text-transform: uppercase;
-        }
-
-        .stat-value {
-            font-size: 20px;
-            font-weight: bold;
-            color: #00ff00;
-            margin-top: 5px;
-        }
-
-        /* Leaflet popup customization */
-        .leaflet-popup-content-wrapper {
-            background: #2a2a2a;
-            color: #e0e0e0;
-        }
-
-        .leaflet-popup-content {
-            font-size: 13px;
-        }
-
-        .leaflet-popup-tip {
-            background: #2a2a2a;
-        }
-
-        .popup-title {
-            font-weight: bold;
-            color: #00ff00;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-
-        .popup-row {
-            margin: 4px 0;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .popup-label {
-            color: #aaa;
-            margin-right: 10px;
-        }
-
-        .popup-value {
-            color: #e0e0e0;
-            font-weight: bold;
-        }
-
-        /* Loading overlay */
-        .loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1000;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 20px 40px;
-            border-radius: 8px;
-            color: #00ff00;
-            font-weight: bold;
-        }
-
-        /* Scrollbar styling */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #1a1a1a;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #3a3a3a;
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #4a4a4a;
-        }
-
-        /* Custom marker colors */
-        .marker-icon {
-            filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5));
-        }
-    </style>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <!-- Header -->
     <div class="header">
         <h1>WarDragon Analytics</h1>
         <div class="header-controls">
+            <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
             <div class="status-indicator">
                 <div class="status-dot"></div>
                 <span id="refresh-status">Auto-refresh: 5s</span>
@@ -360,10 +29,49 @@
         </div>
     </div>
 
+    <!-- Alert Panel -->
+    <div id="alert-panel" class="alert-panel">
+        <div class="alert-header">
+            <h3>Live Alerts</h3>
+            <button class="alert-clear-all" onclick="clearAllAlerts()">Clear All</button>
+        </div>
+        <div id="alerts-list" class="alerts-list"></div>
+    </div>
+
     <!-- Main Container -->
     <div class="container">
         <!-- Sidebar -->
         <div class="sidebar">
+            <h2>Quick Filters</h2>
+
+            <!-- Quick Filter Buttons -->
+            <div class="quick-filters">
+                <button id="filter-showUnusual" class="quick-filter-btn" onclick="toggleQuickFilter('showUnusual')">
+                    <span>Show Unusual</span>
+                    <span id="unusual-count" class="count">0</span>
+                </button>
+                <button id="filter-showRepeated" class="quick-filter-btn" onclick="toggleQuickFilter('showRepeated')">
+                    <span>Show Repeated</span>
+                    <span id="repeated-count" class="count">0</span>
+                </button>
+                <button id="filter-showCoordinated" class="quick-filter-btn" onclick="toggleQuickFilter('showCoordinated')">
+                    <span>Show Coordinated</span>
+                    <span id="coordinated-count" class="count">0</span>
+                </button>
+            </div>
+
+            <h2>RID Watchlist</h2>
+
+            <!-- Watchlist Input -->
+            <div class="filter-section">
+                <label>Add Drone ID to Watch</label>
+                <div class="watchlist-input-group">
+                    <input type="text" id="watchlist-input" placeholder="Enter drone ID..." onkeypress="if(event.key==='Enter') { addToWatchlist(document.getElementById('watchlist-input').value); document.getElementById('watchlist-input').value = ''; }">
+                    <button class="watchlist-add-btn" onclick="addToWatchlist(document.getElementById('watchlist-input').value); document.getElementById('watchlist-input').value = '';">Add</button>
+                </div>
+                <div id="watchlist-items" class="watchlist-items"></div>
+            </div>
+
             <h2>Filters</h2>
 
             <!-- Time Range -->
@@ -411,6 +119,16 @@
                 </select>
             </div>
 
+            <!-- Geographic Filter -->
+            <div class="filter-section">
+                <label>Geographic Filter</label>
+                <div class="geo-filter-controls">
+                    <div style="font-size: 11px; color: #aaa; margin-bottom: 8px;">
+                        Use the polygon/rectangle tools on the map to draw a filter area
+                    </div>
+                </div>
+            </div>
+
             <!-- Auto-refresh -->
             <div class="filter-section">
                 <label>Auto-Refresh</label>
@@ -430,6 +148,30 @@
 
         <!-- Main Content -->
         <div class="main-content">
+            <!-- Threat Summary Cards -->
+            <div class="threat-summary">
+                <div class="threat-card critical" onclick="filterByThreatCard('unusual')">
+                    <div class="threat-card-label">Active Threats</div>
+                    <div id="active-threats" class="threat-card-value">0</div>
+                    <div class="threat-card-detail">Anomalies detected in last hour</div>
+                </div>
+                <div class="threat-card warning" onclick="filterByThreatCard('repeated')">
+                    <div class="threat-card-label">Repeated Contacts</div>
+                    <div id="repeated-contacts" class="threat-card-value">0</div>
+                    <div class="threat-card-detail">Drones seen 2+ times</div>
+                </div>
+                <div class="threat-card" onclick="filterByThreatCard('coordinated')">
+                    <div class="threat-card-label">Multi-Kit Detections</div>
+                    <div id="multi-kit-detections" class="threat-card-value">0</div>
+                    <div class="threat-card-detail">Drones seen by 2+ kits</div>
+                </div>
+                <div class="threat-card warning">
+                    <div class="threat-card-label">Anomalies Detected</div>
+                    <div id="anomalies-count" class="threat-card-value">0</div>
+                    <div class="threat-card-detail">Total anomaly instances</div>
+                </div>
+            </div>
+
             <!-- Stats -->
             <div class="stats-container">
                 <div class="stat-badge">
@@ -474,7 +216,7 @@
                     </thead>
                     <tbody id="tracks-table">
                         <tr>
-                            <td colspan="10" style="text-align: center; color: #aaa;">No data available</td>
+                            <td colspan="10" style="text-align: center; color: #aaa;">Loading...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -484,310 +226,10 @@
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet Draw JS -->
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 
-    <script>
-        // Global variables
-        let map;
-        let markers = [];
-        let currentData = [];
-        let refreshTimer;
-        let kits = [];
-
-        // Kit color mapping
-        const KIT_COLORS = [
-            '#ff4444', '#4444ff', '#44ff44', '#ffff44', '#ff44ff', '#44ffff',
-            '#ff8844', '#8844ff', '#44ff88', '#ff4488', '#88ff44', '#4488ff'
-        ];
-
-        // Initialize map
-        function initMap() {
-            map = L.map('map').setView([34.05, -118.24], 12);
-
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors',
-                maxZoom: 19
-            }).addTo(map);
-        }
-
-        // Create custom marker icon
-        function createMarkerIcon(color, trackType) {
-            const iconHtml = trackType === 'aircraft'
-                ? `<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" fill="${color}"/></svg>`
-                : `<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8" fill="${color}" stroke="#000" stroke-width="1"/></svg>`;
-
-            return L.divIcon({
-                html: iconHtml,
-                className: 'marker-icon',
-                iconSize: [24, 24],
-                iconAnchor: [12, 12],
-                popupAnchor: [0, -12]
-            });
-        }
-
-        // Format time
-        function formatTime(isoString) {
-            if (!isoString) return 'N/A';
-            const date = new Date(isoString);
-            return date.toLocaleTimeString();
-        }
-
-        // Format coordinate
-        function formatCoord(value, decimals = 6) {
-            return value != null ? value.toFixed(decimals) : 'N/A';
-        }
-
-        // Create popup content
-        function createPopup(track) {
-            const ridMake = track.rid_make || 'Unknown';
-            const ridModel = track.rid_model || 'Unknown';
-            const trackType = track.track_type || 'drone';
-
-            return `
-                <div class="popup-title">${track.drone_id}</div>
-                <div class="popup-row">
-                    <span class="popup-label">Kit:</span>
-                    <span class="popup-value">${track.kit_id}</span>
-                </div>
-                <div class="popup-row">
-                    <span class="popup-label">Type:</span>
-                    <span class="popup-value">${trackType}</span>
-                </div>
-                <div class="popup-row">
-                    <span class="popup-label">RID:</span>
-                    <span class="popup-value">${ridMake} ${ridModel}</span>
-                </div>
-                <div class="popup-row">
-                    <span class="popup-label">Position:</span>
-                    <span class="popup-value">${formatCoord(track.lat)}, ${formatCoord(track.lon)}</span>
-                </div>
-                <div class="popup-row">
-                    <span class="popup-label">Altitude:</span>
-                    <span class="popup-value">${track.alt != null ? track.alt.toFixed(1) : 'N/A'} m</span>
-                </div>
-                <div class="popup-row">
-                    <span class="popup-label">Speed:</span>
-                    <span class="popup-value">${track.speed != null ? track.speed.toFixed(1) : 'N/A'} m/s</span>
-                </div>
-                <div class="popup-row">
-                    <span class="popup-label">RSSI:</span>
-                    <span class="popup-value">${track.rssi || 'N/A'} dBm</span>
-                </div>
-                <div class="popup-row">
-                    <span class="popup-label">Time:</span>
-                    <span class="popup-value">${formatTime(track.time)}</span>
-                </div>
-            `;
-        }
-
-        // Update map markers
-        function updateMap(data) {
-            // Clear existing markers
-            markers.forEach(marker => map.removeLayer(marker));
-            markers = [];
-
-            // Add new markers
-            data.forEach((track, index) => {
-                if (track.lat != null && track.lon != null) {
-                    const kitIndex = kits.findIndex(k => k.kit_id === track.kit_id);
-                    const color = KIT_COLORS[kitIndex % KIT_COLORS.length];
-                    const icon = createMarkerIcon(color, track.track_type);
-
-                    const marker = L.marker([track.lat, track.lon], { icon })
-                        .bindPopup(createPopup(track))
-                        .addTo(map);
-
-                    markers.push(marker);
-                }
-            });
-
-            // Auto-fit bounds if markers exist
-            if (markers.length > 0) {
-                const group = L.featureGroup(markers);
-                map.fitBounds(group.getBounds().pad(0.1));
-            }
-        }
-
-        // Update table
-        function updateTable(data) {
-            const tbody = document.getElementById('tracks-table');
-            tbody.innerHTML = '';
-
-            if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #aaa;">No data available</td></tr>';
-                return;
-            }
-
-            data.slice(0, 100).forEach(track => {
-                const row = document.createElement('tr');
-                row.className = 'track-row';
-                row.onclick = () => {
-                    if (track.lat != null && track.lon != null) {
-                        map.setView([track.lat, track.lon], 15);
-                        markers.forEach(marker => {
-                            const pos = marker.getLatLng();
-                            if (pos.lat === track.lat && pos.lng === track.lon) {
-                                marker.openPopup();
-                            }
-                        });
-                    }
-                };
-
-                row.innerHTML = `
-                    <td>${formatTime(track.time)}</td>
-                    <td>${track.kit_id}</td>
-                    <td>${track.drone_id}</td>
-                    <td>${track.track_type || 'drone'}</td>
-                    <td>${track.rid_make || 'N/A'}</td>
-                    <td>${track.rid_model || 'N/A'}</td>
-                    <td>${formatCoord(track.lat)}</td>
-                    <td>${formatCoord(track.lon)}</td>
-                    <td>${track.alt != null ? track.alt.toFixed(1) : 'N/A'}</td>
-                    <td>${track.speed != null ? track.speed.toFixed(1) : 'N/A'}</td>
-                `;
-                tbody.appendChild(row);
-            });
-        }
-
-        // Update stats
-        function updateStats(data) {
-            const drones = data.filter(d => d.track_type === 'drone' || !d.track_type);
-            const aircraft = data.filter(d => d.track_type === 'aircraft');
-            const uniqueKits = new Set(data.map(d => d.kit_id));
-
-            document.getElementById('total-tracks').textContent = data.length;
-            document.getElementById('total-drones').textContent = drones.length;
-            document.getElementById('total-aircraft').textContent = aircraft.length;
-            document.getElementById('active-kits').textContent = uniqueKits.size;
-        }
-
-        // Fetch kits
-        async function fetchKits() {
-            try {
-                const response = await fetch('/api/kits');
-                const data = await response.json();
-                kits = data.kits || [];
-                updateKitCheckboxes();
-            } catch (error) {
-                console.error('Failed to fetch kits:', error);
-            }
-        }
-
-        // Update kit checkboxes
-        function updateKitCheckboxes() {
-            const container = document.getElementById('kit-checkboxes');
-            container.innerHTML = '<label><input type="checkbox" value="all" checked> All Kits</label>';
-
-            kits.forEach(kit => {
-                const label = document.createElement('label');
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.value = kit.kit_id;
-                checkbox.checked = true;
-
-                const statusDot = kit.status === 'online' ? '🟢' : kit.status === 'stale' ? '🟡' : '🔴';
-
-                label.appendChild(checkbox);
-                label.appendChild(document.createTextNode(` ${statusDot} ${kit.name || kit.kit_id}`));
-                container.appendChild(label);
-            });
-        }
-
-        // Get selected filters
-        function getFilters() {
-            const timeRange = document.getElementById('time-range').value;
-            const ridMake = document.getElementById('rid-make').value;
-            const showDrones = document.getElementById('show-drones').checked;
-            const showAircraft = document.getElementById('show-aircraft').checked;
-
-            const kitCheckboxes = document.querySelectorAll('#kit-checkboxes input[type="checkbox"]:checked');
-            const selectedKits = Array.from(kitCheckboxes)
-                .map(cb => cb.value)
-                .filter(v => v !== 'all');
-
-            const filters = { time_range: timeRange };
-            if (selectedKits.length > 0) {
-                filters.kit_id = selectedKits.join(',');
-            }
-            if (ridMake) {
-                filters.rid_make = ridMake;
-            }
-
-            return { filters, showDrones, showAircraft };
-        }
-
-        // Fetch and update data
-        async function fetchData() {
-            try {
-                const { filters, showDrones, showAircraft } = getFilters();
-                const params = new URLSearchParams(filters);
-
-                const response = await fetch(`/api/drones?${params}`);
-                const data = await response.json();
-
-                // Filter by track type
-                let filteredData = data.drones || [];
-                if (!showDrones && !showAircraft) {
-                    filteredData = [];
-                } else if (!showDrones) {
-                    filteredData = filteredData.filter(d => d.track_type === 'aircraft');
-                } else if (!showAircraft) {
-                    filteredData = filteredData.filter(d => d.track_type !== 'aircraft');
-                }
-
-                currentData = filteredData;
-
-                updateMap(currentData);
-                updateTable(currentData);
-                updateStats(currentData);
-
-                document.getElementById('last-update').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
-            } catch (error) {
-                console.error('Failed to fetch data:', error);
-            }
-        }
-
-        // Apply filters
-        function applyFilters() {
-            fetchData();
-        }
-
-        // Export CSV
-        function exportCSV() {
-            const { filters } = getFilters();
-            const params = new URLSearchParams(filters);
-            window.location.href = `/api/export/csv?${params}`;
-        }
-
-        // Setup auto-refresh
-        function setupAutoRefresh() {
-            const select = document.getElementById('refresh-interval');
-            select.addEventListener('change', () => {
-                const interval = parseInt(select.value);
-
-                if (refreshTimer) {
-                    clearInterval(refreshTimer);
-                    refreshTimer = null;
-                }
-
-                if (interval > 0) {
-                    refreshTimer = setInterval(fetchData, interval * 1000);
-                    document.getElementById('refresh-status').textContent = `Auto-refresh: ${interval}s`;
-                } else {
-                    document.getElementById('refresh-status').textContent = 'Auto-refresh: Disabled';
-                }
-            });
-        }
-
-        // Initialize
-        document.addEventListener('DOMContentLoaded', async () => {
-            initMap();
-            setupAutoRefresh();
-            await fetchKits();
-            await fetchData();
-
-            // Start auto-refresh (default 5s)
-            refreshTimer = setInterval(fetchData, 5000);
-        });
-    </script>
+    <!-- Custom JS -->
+    <script src="/static/map.js"></script>
 </body>
 </html>

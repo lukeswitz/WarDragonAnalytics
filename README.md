@@ -6,9 +6,9 @@ Centralized logging, analysis, and visualization of data from one or more WarDra
 
 ---
 
-## Status: 🚧 Planning/Design Phase
+## Status: ✅ Phase 2 Complete - Production Ready
 
-This project is in the planning stage. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
+WarDragon Analytics is fully operational with Phase 1 (core features) and Phase 2 (pattern detection and tactical intelligence) complete. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 
 ---
 
@@ -91,30 +91,38 @@ docker-compose up -d
 
 ## Features Roadmap
 
-### Phase 1: MVP ✅ (Planning Complete)
+### Phase 1: Core Platform ✅ COMPLETE
 - [x] Architecture design
-- [ ] TimescaleDB schema + init scripts
-- [ ] Collector service (basic polling)
-- [ ] Web UI (Leaflet map + table)
-- [ ] Docker Compose deployment
+- [x] TimescaleDB schema + init scripts
+- [x] Collector service (multi-kit polling)
+- [x] Web UI (Leaflet map + table)
+- [x] Docker Compose deployment
+- [x] REST API endpoints (kits, drones, signals, CSV export)
+- [x] Kit health monitoring
+- [x] Multi-kit aggregation
 
-### Phase 2: Multi-Kit
-- [ ] Kit management UI
-- [ ] Health monitoring
-- [ ] Grafana dashboards
-- [ ] CSV/KML export
+### Phase 2: Pattern Detection & Intelligence ✅ COMPLETE
+- [x] Pattern detection APIs (5 endpoints)
+- [x] Database views and functions for pattern analysis
+- [x] Grafana dashboards (4 tactical dashboards)
+- [x] Enhanced web UI (alerts, filters, watchlist)
+- [x] Test data generator with realistic scenarios
+- [x] Comprehensive documentation
 
-### Phase 3: Advanced
+### Phase 3: Advanced Features (Planned)
 - [ ] Geofencing alerts
-- [ ] RID watchlist
-- [ ] Continuous aggregates
-- [ ] Data retention policies
+- [ ] RID watchlist automation
+- [ ] Continuous aggregates for historical analysis
+- [ ] Data retention policies and archiving
+- [ ] KML export for Google Earth
+- [ ] Alert webhooks and notifications
 
-### Phase 4: Production
-- [ ] Authentication
-- [ ] API keys
-- [ ] Alert webhooks
-- [ ] Mobile UI
+### Phase 4: Production Hardening (Planned)
+- [ ] Authentication (OAuth2, API keys)
+- [ ] Role-based access control
+- [ ] Encrypted database connections
+- [ ] Mobile-optimized UI
+- [ ] High-availability deployment options
 
 ---
 
@@ -189,12 +197,130 @@ See [TESTING.md](TESTING.md) for comprehensive testing documentation.
 
 ---
 
+## Phase 2 Features
+
+WarDragon Analytics Phase 2 adds tactical intelligence and pattern detection capabilities for operators.
+
+### Grafana Dashboards
+
+Pre-built operational dashboards available at http://localhost:3000:
+
+**Tactical Overview Dashboard**
+- Active drones in last 5 minutes
+- Kit status grid (online/offline/stale)
+- Active alerts and anomalies
+- Drone count timeline
+- Top Remote ID manufacturers detected
+
+**Pattern Analysis Dashboard**
+- Repeated drone detections (surveillance patterns)
+- Operator reuse tracking (same operator, multiple drones)
+- Coordinated activity detection (swarms)
+- Flight pattern analysis
+- Frequency reuse patterns
+
+**Multi-Kit Correlation Dashboard**
+- Same drone seen by multiple kits (triangulation)
+- Coverage overlap visualization
+- Kit-to-kit handoff tracking
+- Detection density heatmap
+
+**Anomaly Detection Dashboard**
+- Altitude anomalies (rapid climbs/descents)
+- Speed anomalies (unusually fast/slow)
+- Out-of-pattern behavior alerts
+- Signal strength anomalies
+
+### Pattern Detection APIs
+
+New intelligence endpoints for tactical operations:
+
+```bash
+# Find drones seen multiple times (surveillance pattern)
+curl http://localhost:8090/api/patterns/repeated-drones?hours=24
+
+# Detect coordinated activity (swarms)
+curl http://localhost:8090/api/patterns/coordinated?hours=6
+
+# Find operator reuse across different drones
+curl http://localhost:8090/api/patterns/pilot-reuse?hours=12
+
+# Detect anomalous behavior
+curl http://localhost:8090/api/patterns/anomalies?hours=6
+
+# Find multi-kit detections (triangulation opportunities)
+curl http://localhost:8090/api/patterns/multi-kit?hours=6
+```
+
+### Enhanced Web UI (Port 8090)
+
+Tactical operations interface with:
+- Live alert panel (new drones, pattern matches, anomalies)
+- Quick filters: "Show unusual", "Show repeated", "Show coordinated"
+- Pattern highlighting (coordinated drones grouped)
+- Threat summary cards
+- RID watchlist capability
+
+### Test Data Generator
+
+Generate realistic test scenarios with patterns:
+
+```bash
+# Generate all test scenarios (recommended for first-time setup)
+python tests/generate_test_data.py --scenario all
+
+# Generate specific scenarios
+python tests/generate_test_data.py --scenario normal          # Baseline operations
+python tests/generate_test_data.py --scenario repeated        # Surveillance pattern
+python tests/generate_test_data.py --scenario coordinated     # Swarm behavior
+python tests/generate_test_data.py --scenario operator        # Operator reuse
+python tests/generate_test_data.py --scenario multikit        # Triangulation
+python tests/generate_test_data.py --scenario anomalies       # Unusual behavior
+python tests/generate_test_data.py --scenario fpv             # FPV signals
+
+# Clean test data
+python tests/generate_test_data.py --clean
+
+# Preview without inserting (dry run)
+python tests/generate_test_data.py --scenario all --dry-run
+```
+
+**Test Scenarios:**
+- **Normal Operations**: 20-30 drones, typical flight patterns, 48 hours of data
+- **Repeated Drone**: Same drone appearing 3-5 times over 24 hours (surveillance)
+- **Coordinated Activity**: 4-6 drones together within 500m (swarms)
+- **Operator Reuse**: Same operator ID across different drones, or pilots within 50m
+- **Multi-Kit Detections**: Same drone seen by 2-3 kits simultaneously (triangulation)
+- **Anomalies**: Speed spikes (0-40m/s), altitude drops (100m to 10m), erratic heading
+- **FPV Signals**: 5.8GHz detections at common frequencies with realistic power levels
+
+See [OPERATOR_GUIDE.md](OPERATOR_GUIDE.md) for tactical workflows and pattern interpretation.
+
+---
+
 ## Documentation
 
-- [Architecture Design](docs/ARCHITECTURE.md) - Full system design, database schema, APIs
-- [Testing Guide](TESTING.md) - Comprehensive testing documentation
-- [Development Guide](docs/DEVELOPMENT.md) - How to contribute (coming soon)
-- [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment best practices (coming soon)
+### Getting Started
+- **[README.md](README.md)** (this file) - Project overview and quick start
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Installation and deployment guide
+- **[QUICKSTART.md](QUICKSTART.md)** - Fast setup for testing
+
+### Operations
+- **[OPERATOR_GUIDE.md](OPERATOR_GUIDE.md)** - Tactical operations manual and workflows
+- **[GRAFANA_DASHBOARDS.md](GRAFANA_DASHBOARDS.md)** - Dashboard usage and interpretation guide
+- **[API_REFERENCE.md](API_REFERENCE.md)** - Complete REST API documentation
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and solutions
+
+### Development
+- **[TESTING.md](TESTING.md)** - Testing guide and test data generation
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design and database schema
+- **[SECURITY.md](SECURITY.md)** - Security hardening and best practices
+- **[DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md)** - Complete documentation index
+
+### Reference
+- **[grafana/DASHBOARD_QUERIES.md](grafana/DASHBOARD_QUERIES.md)** - SQL query reference for dashboards
+- **[docs/development/](docs/development/)** - Development-specific documentation
+- **[docs/archive/](docs/archive/)** - Archived implementation documents
 
 ---
 

@@ -42,6 +42,12 @@ app = FastAPI(
     description="Multi-kit drone surveillance aggregation and visualization"
 )
 
+# Mount static files directory
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    logger.info(f"Mounted static files from {static_dir}")
+
 # Database connection pool
 db_pool: Optional[asyncpg.Pool] = None
 
@@ -91,6 +97,58 @@ class SignalDetection(BaseModel):
     lon: Optional[float]
     alt: Optional[float]
     detection_type: Optional[str]
+
+
+# Pattern detection models
+class DroneLocation(BaseModel):
+    lat: float
+    lon: float
+    kit_id: str
+    timestamp: datetime
+
+
+class RepeatedDrone(BaseModel):
+    drone_id: str
+    first_seen: datetime
+    last_seen: datetime
+    appearance_count: int
+    locations: List[DroneLocation]
+
+
+class CoordinatedDrone(BaseModel):
+    drone_id: str
+    lat: float
+    lon: float
+    timestamp: datetime
+    kit_id: Optional[str]
+    rid_make: Optional[str]
+
+
+class CoordinatedGroup(BaseModel):
+    group_id: int
+    drone_count: int
+    drones: List[dict]
+    correlation_score: str
+
+
+class PilotReuse(BaseModel):
+    pilot_identifier: str
+    drones: List[dict]
+    correlation_method: str
+
+
+class Anomaly(BaseModel):
+    anomaly_type: str
+    severity: str
+    drone_id: str
+    details: dict
+    timestamp: datetime
+
+
+class MultiKitDetection(BaseModel):
+    drone_id: str
+    kits: List[dict]
+    triangulation_possible: bool
 
 
 # Startup/Shutdown events
@@ -438,6 +496,447 @@ async def export_csv(
 
     except Exception as e:
         logger.error(f"Failed to export CSV: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/patterns/repeated-drones")
+async def get_repeated_drones(
+    time_window_hours: int = Query(24, description="Time window in hours", ge=1, le=168),
+    min_appearances: int = Query(2, description="Minimum number of appearances", ge=2)
+):
+    """
+    Find drones seen multiple times within the time window.
+
+    Returns:
+        List of drones with multiple appearances, including all locations.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        query = """
+            WITH recent_drones AS (
+                SELECT
+                    drone_id,
+                    time,
+                    kit_id,
+                    lat,
+                    lon
+                FROM drones
+                WHERE time >= NOW() - ($1 || ' hours')::INTERVAL
+                    AND lat IS NOT NULL
+                    AND lon IS NOT NULL
+            ),
+            drone_counts AS (
+                SELECT
+                    drone_id,
+                    COUNT(*) AS appearance_count,
+                    MIN(time) AS first_seen,
+                    MAX(time) AS last_seen
+                FROM recent_drones
+                GROUP BY drone_id
+                HAVING COUNT(*) >= $2
+            )
+            SELECT
+                dc.drone_id,
+                dc.first_seen,
+                dc.last_seen,
+                dc.appearance_count,
+                json_agg(
+                    json_build_object(
+                        'lat', rd.lat,
+                        'lon', rd.lon,
+                        'kit_id', rd.kit_id,
+                        'timestamp', rd.time
+                    ) ORDER BY rd.time
+                ) AS locations
+            FROM drone_counts dc
+            JOIN recent_drones rd ON dc.drone_id = rd.drone_id
+            GROUP BY dc.drone_id, dc.first_seen, dc.last_seen, dc.appearance_count
+            ORDER BY dc.appearance_count DESC, dc.last_seen DESC
+            LIMIT 100
+        """
+
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(query, time_window_hours, min_appearances)
+
+        results = [dict(row) for row in rows]
+
+        return {
+            "repeated_drones": results,
+            "count": len(results),
+            "time_window_hours": time_window_hours,
+            "min_appearances": min_appearances
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to query repeated drones: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/patterns/coordinated")
+async def get_coordinated_drones(
+    time_window_minutes: int = Query(60, description="Time window in minutes", ge=1, le=1440),
+    distance_threshold_m: float = Query(500, description="Distance threshold in meters", ge=10)
+):
+    """
+    Detect coordinated drone activity using time and location clustering.
+
+    Returns:
+        Groups of drones appearing together in time and space.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        # Use the database function for coordinated activity detection
+        query = "SELECT detect_coordinated_activity($1, $2) AS groups"
+
+        async with db_pool.acquire() as conn:
+            result = await conn.fetchval(query, time_window_minutes, distance_threshold_m)
+
+        # Parse JSON result
+        import json
+        groups = json.loads(result) if result else []
+
+        return {
+            "coordinated_groups": groups,
+            "count": len(groups),
+            "time_window_minutes": time_window_minutes,
+            "distance_threshold_m": distance_threshold_m
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to detect coordinated activity: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/patterns/pilot-reuse")
+async def get_pilot_reuse(
+    time_window_hours: int = Query(24, description="Time window in hours", ge=1, le=168),
+    proximity_threshold_m: float = Query(50, description="Proximity threshold in meters", ge=10)
+):
+    """
+    Find potential operator reuse across different drone IDs.
+
+    Uses two methods:
+    1. Exact operator_id matches
+    2. Pilot locations within proximity threshold
+
+    Returns:
+        List of operators/locations with associated drones.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        # Method 1: Exact operator_id matches
+        operator_query = """
+            WITH recent_drones AS (
+                SELECT
+                    drone_id,
+                    operator_id,
+                    time,
+                    pilot_lat,
+                    pilot_lon
+                FROM drones
+                WHERE time >= NOW() - ($1 || ' hours')::INTERVAL
+                    AND operator_id IS NOT NULL
+            )
+            SELECT
+                operator_id AS pilot_identifier,
+                'operator_id' AS correlation_method,
+                json_agg(
+                    json_build_object(
+                        'drone_id', drone_id,
+                        'timestamp', time,
+                        'pilot_lat', pilot_lat,
+                        'pilot_lon', pilot_lon
+                    ) ORDER BY time DESC
+                ) AS drones,
+                COUNT(DISTINCT drone_id) AS drone_count
+            FROM recent_drones
+            GROUP BY operator_id
+            HAVING COUNT(DISTINCT drone_id) >= 2
+            ORDER BY drone_count DESC
+        """
+
+        # Method 2: Proximity-based clustering
+        proximity_query = """
+            WITH recent_pilots AS (
+                SELECT DISTINCT ON (drone_id)
+                    drone_id,
+                    pilot_lat,
+                    pilot_lon,
+                    time
+                FROM drones
+                WHERE time >= NOW() - ($1 || ' hours')::INTERVAL
+                    AND pilot_lat IS NOT NULL
+                    AND pilot_lon IS NOT NULL
+                    AND operator_id IS NULL
+                ORDER BY drone_id, time DESC
+            ),
+            pilot_pairs AS (
+                SELECT
+                    p1.drone_id AS drone1_id,
+                    p2.drone_id AS drone2_id,
+                    p1.pilot_lat AS pilot1_lat,
+                    p1.pilot_lon AS pilot1_lon,
+                    calculate_distance_m(p1.pilot_lat, p1.pilot_lon, p2.pilot_lat, p2.pilot_lon) AS distance_m
+                FROM recent_pilots p1
+                CROSS JOIN recent_pilots p2
+                WHERE p1.drone_id < p2.drone_id
+                    AND calculate_distance_m(p1.pilot_lat, p1.pilot_lon, p2.pilot_lat, p2.pilot_lon) <= $2
+            )
+            SELECT
+                CONCAT('PILOT_', ROUND(AVG(rp.pilot_lat)::numeric, 4), '_', ROUND(AVG(rp.pilot_lon)::numeric, 4)) AS pilot_identifier,
+                'proximity' AS correlation_method,
+                json_agg(
+                    json_build_object(
+                        'drone_id', rp.drone_id,
+                        'timestamp', rp.time,
+                        'pilot_lat', rp.pilot_lat,
+                        'pilot_lon', rp.pilot_lon
+                    ) ORDER BY rp.time DESC
+                ) AS drones,
+                COUNT(DISTINCT rp.drone_id) AS drone_count
+            FROM pilot_pairs pp
+            JOIN recent_pilots rp ON rp.drone_id = pp.drone1_id OR rp.drone_id = pp.drone2_id
+            GROUP BY pp.drone1_id
+            HAVING COUNT(DISTINCT rp.drone_id) >= 2
+            ORDER BY drone_count DESC
+        """
+
+        async with db_pool.acquire() as conn:
+            operator_rows = await conn.fetch(operator_query, time_window_hours)
+            proximity_rows = await conn.fetch(proximity_query, time_window_hours, proximity_threshold_m)
+
+        results = [dict(row) for row in operator_rows] + [dict(row) for row in proximity_rows]
+
+        return {
+            "pilot_reuse": results,
+            "count": len(results),
+            "time_window_hours": time_window_hours,
+            "proximity_threshold_m": proximity_threshold_m
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to detect pilot reuse: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/patterns/anomalies")
+async def get_anomalies(
+    time_window_hours: int = Query(1, description="Time window in hours", ge=1, le=24)
+):
+    """
+    Detect anomalous drone behavior.
+
+    Detects:
+    - Speed anomalies (>30 m/s)
+    - Altitude anomalies (>400m for drones)
+    - Rapid altitude changes (>50m in 10 seconds)
+    - Multiple appearances (repeated sightings)
+
+    Returns:
+        List of anomalies with type, severity, and details.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        query = """
+            WITH recent_drones AS (
+                SELECT
+                    drone_id,
+                    time,
+                    kit_id,
+                    lat,
+                    lon,
+                    alt,
+                    speed,
+                    heading,
+                    track_type,
+                    rid_make,
+                    rid_model,
+                    LAG(alt) OVER (PARTITION BY drone_id ORDER BY time) AS prev_alt,
+                    LAG(time) OVER (PARTITION BY drone_id ORDER BY time) AS prev_time
+                FROM drones
+                WHERE time >= NOW() - ($1 || ' hours')::INTERVAL
+                    AND track_type = 'drone'
+            ),
+            speed_anomalies AS (
+                SELECT
+                    'speed' AS anomaly_type,
+                    CASE
+                        WHEN speed > 50 THEN 'critical'
+                        WHEN speed > 40 THEN 'high'
+                        ELSE 'medium'
+                    END AS severity,
+                    drone_id,
+                    json_build_object(
+                        'speed_ms', speed,
+                        'lat', lat,
+                        'lon', lon,
+                        'kit_id', kit_id,
+                        'rid_make', rid_make
+                    ) AS details,
+                    time AS timestamp
+                FROM recent_drones
+                WHERE speed > 30
+            ),
+            altitude_anomalies AS (
+                SELECT
+                    'altitude' AS anomaly_type,
+                    CASE
+                        WHEN alt > 500 THEN 'critical'
+                        WHEN alt > 450 THEN 'high'
+                        ELSE 'medium'
+                    END AS severity,
+                    drone_id,
+                    json_build_object(
+                        'altitude_m', alt,
+                        'lat', lat,
+                        'lon', lon,
+                        'kit_id', kit_id,
+                        'rid_make', rid_make
+                    ) AS details,
+                    time AS timestamp
+                FROM recent_drones
+                WHERE alt > 400
+            ),
+            rapid_altitude_changes AS (
+                SELECT
+                    'rapid_altitude_change' AS anomaly_type,
+                    CASE
+                        WHEN ABS(alt - prev_alt) > 100 THEN 'critical'
+                        WHEN ABS(alt - prev_alt) > 75 THEN 'high'
+                        ELSE 'medium'
+                    END AS severity,
+                    drone_id,
+                    json_build_object(
+                        'altitude_change_m', ABS(alt - prev_alt),
+                        'time_diff_seconds', EXTRACT(EPOCH FROM (time - prev_time)),
+                        'from_alt', prev_alt,
+                        'to_alt', alt,
+                        'lat', lat,
+                        'lon', lon,
+                        'kit_id', kit_id
+                    ) AS details,
+                    time AS timestamp
+                FROM recent_drones
+                WHERE prev_alt IS NOT NULL
+                    AND prev_time IS NOT NULL
+                    AND ABS(alt - prev_alt) > 50
+                    AND EXTRACT(EPOCH FROM (time - prev_time)) <= 10
+            )
+            SELECT * FROM speed_anomalies
+            UNION ALL
+            SELECT * FROM altitude_anomalies
+            UNION ALL
+            SELECT * FROM rapid_altitude_changes
+            ORDER BY timestamp DESC, severity DESC
+            LIMIT 200
+        """
+
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(query, time_window_hours)
+
+        results = [dict(row) for row in rows]
+
+        return {
+            "anomalies": results,
+            "count": len(results),
+            "time_window_hours": time_window_hours
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to detect anomalies: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/patterns/multi-kit")
+async def get_multi_kit_detections(
+    time_window_minutes: int = Query(15, description="Time window in minutes", ge=1, le=1440)
+):
+    """
+    Find drones detected by multiple kits.
+
+    Useful for triangulation and correlation analysis.
+
+    Returns:
+        List of drones with detections from multiple kits.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        query = """
+            WITH recent_detections AS (
+                SELECT
+                    time_bucket($1 || ' minutes', time) AS bucket,
+                    drone_id,
+                    kit_id,
+                    lat,
+                    lon,
+                    alt,
+                    freq,
+                    rssi,
+                    time,
+                    rid_make,
+                    rid_model
+                FROM drones
+                WHERE time >= NOW() - ($1 || ' minutes')::INTERVAL
+                    AND lat IS NOT NULL
+                    AND lon IS NOT NULL
+            ),
+            multi_kit_groups AS (
+                SELECT
+                    drone_id,
+                    COUNT(DISTINCT kit_id) AS kit_count,
+                    json_agg(
+                        json_build_object(
+                            'kit_id', kit_id,
+                            'rssi', rssi,
+                            'freq', freq,
+                            'timestamp', time,
+                            'lat', lat,
+                            'lon', lon,
+                            'alt', alt
+                        ) ORDER BY rssi DESC
+                    ) AS kits,
+                    MAX(rid_make) AS rid_make,
+                    MAX(rid_model) AS rid_model,
+                    MAX(time) AS latest_detection
+                FROM recent_detections
+                GROUP BY drone_id
+                HAVING COUNT(DISTINCT kit_id) >= 2
+            )
+            SELECT
+                drone_id,
+                kits,
+                (kit_count >= 3) AS triangulation_possible,
+                rid_make,
+                rid_model,
+                latest_detection
+            FROM multi_kit_groups
+            ORDER BY kit_count DESC, latest_detection DESC
+            LIMIT 100
+        """
+
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(query, time_window_minutes)
+
+        results = [dict(row) for row in rows]
+
+        return {
+            "multi_kit_detections": results,
+            "count": len(results),
+            "time_window_minutes": time_window_minutes
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to query multi-kit detections: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
