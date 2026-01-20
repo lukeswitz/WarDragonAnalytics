@@ -90,7 +90,7 @@ docker exec wardragon-timescaledb pg_isready -U wardragon
 docker-compose logs collector
 
 # Access Web UI
-curl http://localhost:8080/health
+curl http://localhost:8090/health
 
 # Access Grafana
 # Open browser to http://localhost:3000
@@ -101,7 +101,7 @@ curl http://localhost:8080/health
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| Web UI | http://localhost:8080 | FastAPI web interface |
+| Web UI | http://localhost:8090 | FastAPI web interface |
 | Grafana | http://localhost:3000 | Grafana dashboards |
 | TimescaleDB | localhost:5432 | PostgreSQL (local only) |
 
@@ -122,7 +122,7 @@ curl http://localhost:8080/health
 3. **Firewall Configuration**
    ```bash
    # Allow Web UI (if exposed directly)
-   sudo ufw allow 8080/tcp
+   sudo ufw allow 8090/tcp
 
    # Allow Grafana (if exposed directly)
    sudo ufw allow 3000/tcp
@@ -165,7 +165,7 @@ server {
 
     # Web UI
     location / {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8090;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -10,7 +10,7 @@ pip install psycopg2-binary
 python app/test_data_generator.py --mode=db --duration=2h --kits=3 --drones=15
 
 # View in web UI
-open http://localhost:8080
+open http://localhost:8090
 ```
 
 ## Common Commands
@@ -106,7 +106,7 @@ python app/test_data_generator.py \
 ## Next Steps
 
 1. **View data in Grafana**: http://localhost:3000
-2. **Use web UI**: http://localhost:8080
+2. **Use web UI**: http://localhost:8090
 3. **Query database directly**:
    ```sql
    SELECT COUNT(*) FROM drones;

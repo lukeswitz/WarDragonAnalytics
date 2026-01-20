@@ -165,7 +165,7 @@ A comprehensive, production-ready Docker Compose configuration has been created 
 │  │  ┌────────┐  ┌─────────┐  ┌──────────┐         │  │
 │  │  │Collector│  │   Web   │  │ Grafana  │         │  │
 │  │  │(Python) │  │(FastAPI)│  │          │         │  │
-│  │  │Polls    │  │:8080    │  │:3000     │         │  │
+│  │  │Polls    │  │:8090    │  │:3000     │         │  │
 │  │  │kits     │  │         │  │          │         │  │
 │  │  └─────────┘  └─────────┘  └──────────┘         │  │
 │  │                                                  │  │
@@ -315,7 +315,7 @@ sudo systemctl enable wardragon-analytics
 
 After deployment:
 
-- **Web UI:** http://localhost:8080
+- **Web UI:** http://localhost:8090
 - **Grafana:** http://localhost:3000
   - Username: `admin`
   - Password: (see .env file)
@@ -549,7 +549,7 @@ crontab -e
 # Manual
 docker-compose ps
 docker exec wardragon-timescaledb pg_isready -U wardragon
-curl http://localhost:8080/health
+curl http://localhost:8090/health
 curl http://localhost:3000/api/health
 ```
 
@@ -586,7 +586,7 @@ docker-compose logs -f --tail=100
 
 1. **Immediate:**
    - Run `./quickstart.sh` to deploy
-   - Access Web UI at http://localhost:8080
+   - Access Web UI at http://localhost:8090
    - Access Grafana at http://localhost:3000
    - Configure config/kits.yaml with your kits
 
@@ -609,7 +609,7 @@ Your deployment is successful when:
 
 ✅ All services showing "Up (healthy)" in `docker-compose ps`
 ✅ `./healthcheck.sh` reports all systems healthy
-✅ Web UI accessible at http://localhost:8080
+✅ Web UI accessible at http://localhost:8090
 ✅ Grafana accessible at http://localhost:3000
 ✅ Database accepting connections
 ✅ Collector polling configured kits

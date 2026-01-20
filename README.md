@@ -64,7 +64,7 @@ cp .env.example .env
 docker-compose up -d
 
 # Access UIs
-# Web UI:  http://localhost:8080
+# Web UI:  http://localhost:8090
 # Grafana: http://localhost:3000  (admin / <GRAFANA_PASSWORD>)
 ```
 

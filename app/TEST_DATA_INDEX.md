@@ -203,7 +203,7 @@ python app/example_usage.py
    → python app/validate_test_data.py
 
 6. Use data:
-   → Web UI: http://localhost:8080
+   → Web UI: http://localhost:8090
    → Grafana: http://localhost:3000
    → SQL: psql -U wardragon -d wardragon
 ```
@@ -314,7 +314,7 @@ After generating test data:
 1. **View in Web UI**
    ```bash
    # Assuming web UI is running
-   open http://localhost:8080
+   open http://localhost:8090
    ```
 
 2. **View in Grafana**

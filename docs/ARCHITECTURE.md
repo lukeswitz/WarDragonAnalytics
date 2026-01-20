@@ -75,7 +75,7 @@ GET /update/check    -> Git update availability
           │  └─────────────────────────────────────┘    │
           │                                              │
           │  ┌─────────────────────────────────────┐    │
-          │  │   Web UI :8080 (FastAPI/Flask)      │    │
+          │  │   Web UI :8090 (FastAPI/Flask)      │    │
           │  │  - Leaflet map (all kits combined)  │    │
           │  │  - Kit management                   │    │
           │  │  - CSV/KML export                   │    │
@@ -297,11 +297,11 @@ services:
 
   web:
     build: ./app
-    command: uvicorn api:app --host 0.0.0.0 --port 8080
+    command: uvicorn api:app --host 0.0.0.0 --port 8090
     environment:
       DATABASE_URL: postgresql://wardragon:${DB_PASSWORD}@timescaledb:5432/wardragon
     ports:
-      - "8080:8080"
+      - "8090:8090"
     depends_on:
       - timescaledb
     restart: always

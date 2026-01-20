@@ -235,7 +235,7 @@ docker-compose ps | grep -q "wardragon-grafana" && echo "✓ Grafana running" ||
 
 # Check health status
 docker exec wardragon-timescaledb pg_isready -U wardragon && echo "✓ Database healthy" || echo "✗ Database unhealthy"
-curl -sf http://localhost:8080/health && echo "✓ Web API healthy" || echo "✗ Web API unhealthy"
+curl -sf http://localhost:8090/health && echo "✓ Web API healthy" || echo "✗ Web API unhealthy"
 curl -sf http://localhost:3000/api/health && echo "✓ Grafana healthy" || echo "✗ Grafana unhealthy"
 
 # Check volumes
@@ -467,7 +467,7 @@ Your setup is ready when:
 5. ✅ config/kits.yaml configured
 6. ✅ All services start without errors
 7. ✅ Health checks pass
-8. ✅ Web UI accessible (http://localhost:8080)
+8. ✅ Web UI accessible (http://localhost:8090)
 9. ✅ Grafana accessible (http://localhost:3000)
 10. ✅ Database accepting connections
 

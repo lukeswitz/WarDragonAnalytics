@@ -167,7 +167,7 @@ python app/test_data_generator.py --mode=sql --duration=1h | psql -U wardragon -
 
 After generating test data:
 
-1. **Web UI**: Navigate to `http://localhost:8080` to see drone tracks on the map
+1. **Web UI**: Navigate to `http://localhost:8090` to see drone tracks on the map
 2. **Grafana**: View pre-built dashboards at `http://localhost:3000`
 3. **Verify data**: Query database directly
    ```sql

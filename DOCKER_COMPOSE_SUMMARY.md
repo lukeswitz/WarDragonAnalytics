@@ -164,7 +164,7 @@ A production-ready Docker Compose configuration for WarDragon Analytics has been
 
 ### Web Service (FastAPI)
 - **Build:** ./app/Dockerfile (target: web)
-- **Port:** 8080
+- **Port:** 8090
 - **Depends On:** timescaledb
 - **Health Check:** HTTP /health endpoint
 - **Features:**
@@ -193,7 +193,7 @@ A production-ready Docker Compose configuration for WarDragon Analytics has been
 wardragon-net (bridge)
 ├── Subnet: 172.20.0.0/16
 ├── Services communicate internally
-└── Only web:8080 and grafana:3000 exposed to host
+└── Only web:8090 and grafana:3000 exposed to host
 ```
 
 ## Security Features
@@ -241,7 +241,7 @@ make setup
 make start
 
 # 3. Access services
-# Web UI: http://localhost:8080
+# Web UI: http://localhost:8090
 # Grafana: http://localhost:3000
 ```
 
@@ -304,7 +304,7 @@ sudo systemctl start wardragon-analytics
 - `LOG_LEVEL` - Application log level (default: INFO)
 - `POLL_INTERVAL_DRONES` - Drone polling interval (default: 5s)
 - `POLL_INTERVAL_STATUS` - Status polling interval (default: 30s)
-- `WEB_PORT` - Web UI port (default: 8080)
+- `WEB_PORT` - Web UI port (default: 8090)
 - `GRAFANA_PORT` - Grafana port (default: 3000)
 - `CORS_ORIGINS` - Allowed CORS origins (default: *)
 - `MAX_QUERY_RANGE_HOURS` - Max query range (default: 168 hours)
@@ -348,7 +348,7 @@ docker-compose ps
 docker exec wardragon-timescaledb pg_isready -U wardragon
 
 # Web API
-curl http://localhost:8080/health
+curl http://localhost:8090/health
 
 # Grafana
 curl http://localhost:3000/api/health
@@ -470,7 +470,7 @@ make logs-db           # Database only
 
 A successful deployment should:
 1. All services show HEALTHY in health check
-2. Web UI accessible at http://localhost:8080
+2. Web UI accessible at http://localhost:8090
 3. Grafana accessible at http://localhost:3000
 4. Database accepting connections
 5. Collector polling configured kits
@@ -490,7 +490,7 @@ A successful deployment should:
    - Restart collector: `docker-compose restart collector`
 
 3. **Access Services:**
-   - Web UI: http://localhost:8080
+   - Web UI: http://localhost:8090
    - Grafana: http://localhost:3000
 
 4. **Production Deployment:**

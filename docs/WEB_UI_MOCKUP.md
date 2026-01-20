@@ -167,7 +167,7 @@ When you click `[Add Kit]`:
 ## How Data Flows to UI
 
 ```
-User visits http://localhost:8080
+User visits http://localhost:8090
           ↓
 FastAPI serves HTML page with Leaflet map
           ↓
@@ -212,7 +212,7 @@ setInterval(() => {
 **Option B: WebSockets (Advanced, Phase 3)**
 ```javascript
 // Real-time push updates
-const ws = new WebSocket('ws://localhost:8080/ws')
+const ws = new WebSocket('ws://localhost:8090/ws')
 ws.onmessage = (event) => {
   const update = JSON.parse(event.data)
   addDroneToMap(update)  // Instant update

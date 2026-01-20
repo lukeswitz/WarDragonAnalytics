@@ -24,7 +24,7 @@ This document provides an overview of all Docker-related configuration files for
 
 3. **web** - FastAPI web interface
    - Built from `./app/Dockerfile` (target: web)
-   - Port: `8080:8080`
+   - Port: `8090:8090`
    - Depends on: timescaledb
    - Health check: HTTP GET `/health`
    - Restart policy: `unless-stopped`
@@ -90,7 +90,7 @@ docker-compose up -d  # Automatically uses override file
 - `GRAFANA_SECRET_KEY` - Secret key for signing cookies
 - `GRAFANA_ROOT_URL` - Root URL for reverse proxy
 - `GRAFANA_PORT` - Grafana port (default: 3000)
-- `WEB_PORT` - Web UI port (default: 8080)
+- `WEB_PORT` - Web UI port (default: 8090)
 - `CORS_ORIGINS` - Allowed CORS origins
 - `LOG_LEVEL` - Application log level
 - `POLL_INTERVAL_DRONES` - Drone polling interval (seconds)
@@ -219,7 +219,7 @@ sudo systemctl start wardragon-analytics
 │  │                                                   │ │
 │  │  ┌──────────────┐  ┌──────────────┐              │ │
 │  │  │  collector   │  │     web      │              │ │
-│  │  │  (internal)  │  │  :8080       │◄─────────────┼─┤ External
+│  │  │  (internal)  │  │  :8090       │◄─────────────┼─┤ External
 │  │  └──────┬───────┘  └──────┬───────┘              │ │
 │  │         │                 │                       │ │
 │  │         ├─────────────────┤                       │ │
@@ -308,7 +308,7 @@ docker-compose logs -f
 ls -l .env
 
 # Check port conflicts
-sudo netstat -tlnp | grep -E ':(5432|8080|3000)'
+sudo netstat -tlnp | grep -E ':(5432|8090|3000)'
 ```
 
 ### Database Connection Issues

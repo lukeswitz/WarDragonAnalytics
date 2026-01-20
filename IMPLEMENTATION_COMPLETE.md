@@ -82,7 +82,7 @@ All scripts include:
 
 **Output:**
 - Container status
-- Web UI URL (http://localhost:8080)
+- Web UI URL (http://localhost:8090)
 - Grafana URL (http://localhost:3000)
 - Default credentials
 - Instructions for viewing logs and stopping
@@ -290,7 +290,7 @@ nano config/kits.yaml  # Add kit IPs
 ./scripts/start.sh
 
 # 5. Access
-# Web UI:  http://localhost:8080
+# Web UI:  http://localhost:8090
 # Grafana: http://localhost:3000
 ```
 

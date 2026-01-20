@@ -205,7 +205,7 @@ nano config/kits.yaml  # Add your WarDragon kit IPs
 ./scripts/start.sh
 
 # 5. Access UIs
-# Web UI:  http://localhost:8080
+# Web UI:  http://localhost:8090
 # Grafana: http://localhost:3000 (admin / your_password)
 ```
 
@@ -307,7 +307,7 @@ Optional in `.env`:
 - `GRAFANA_SECRET_KEY` - Cookie signing key
 - `GRAFANA_ROOT_URL` - Public URL for reverse proxy
 - `GRAFANA_PORT` - Grafana port (default: 3000)
-- `WEB_PORT` - Web UI port (default: 8080)
+- `WEB_PORT` - Web UI port (default: 8090)
 - `CORS_ORIGINS` - CORS allowed origins
 - `LOG_LEVEL` - Collector log level (INFO, DEBUG, etc.)
 - `POLL_INTERVAL_DRONES` - Drone polling interval (default: 5s)

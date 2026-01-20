@@ -97,7 +97,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       MAX_QUERY_RANGE_HOURS: ${MAX_QUERY_RANGE_HOURS:-168}
     ports:
-      - "${WEB_PORT:-8080}:8080"
+      - "${WEB_PORT:-8090}:8090"
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -105,7 +105,7 @@ services:
       - wardragon-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8090/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

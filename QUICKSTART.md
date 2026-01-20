@@ -59,7 +59,7 @@ DB_PASSWORD=your_secure_db_password_here
 GRAFANA_PASSWORD=your_secure_grafana_password_here
 
 # Optional: Custom ports
-# WEB_PORT=8080
+# WEB_PORT=8090
 # GRAFANA_PORT=3000
 # DB_PORT=5432
 ```
@@ -138,7 +138,7 @@ WarDragon Analytics is running!
 ==========================================
 
 Access the services at:
-  Web UI:  http://localhost:8080
+  Web UI:  http://localhost:8090
   Grafana: http://localhost:3000
 ```
 
@@ -146,7 +146,7 @@ Access the services at:
 
 ## Accessing the Interfaces
 
-### Web UI (http://localhost:8080)
+### Web UI (http://localhost:8090)
 
 - **Main Map:** Real-time drone tracks from all kits
 - **Kit Management:** Add/remove/configure kits
@@ -181,7 +181,7 @@ This will:
 - Allow you to verify the UI and dashboards
 
 **Check the data in:**
-- Web UI: http://localhost:8080
+- Web UI: http://localhost:8090
 - Grafana: http://localhost:3000
 
 ---
@@ -303,7 +303,7 @@ You'll be prompted to confirm before data deletion.
 
 2. **Check port conflicts:**
    ```bash
-   sudo lsof -i :8080
+   sudo lsof -i :8090
    sudo lsof -i :3000
    sudo lsof -i :5432
    ```
@@ -391,7 +391,7 @@ Then reset the database:
 1. **Use strong passwords** in `.env`
 2. **Configure firewall** to restrict access:
    ```bash
-   sudo ufw allow from 192.168.1.0/24 to any port 8080
+   sudo ufw allow from 192.168.1.0/24 to any port 8090
    sudo ufw allow from 192.168.1.0/24 to any port 3000
    ```
 3. **Enable HTTPS** with reverse proxy (nginx/Caddy)

@@ -66,9 +66,9 @@ if ! check_service "Collector" "wardragon-collector" "docker exec wardragon-coll
 fi
 
 # Check Web API
-if ! check_service "Web API" "wardragon-web" "curl -sf http://localhost:8080/health"; then
+if ! check_service "Web API" "wardragon-web" "curl -sf http://localhost:8090/health"; then
     OVERALL_HEALTHY=1
-    echo "  Issue: Web API not responding on port 8080"
+    echo "  Issue: Web API not responding on port 8090"
 fi
 
 # Check Grafana
@@ -111,7 +111,7 @@ fi
 
 # Service URLs
 echo "Service URLs:"
-echo "  Web UI:   http://localhost:8080"
+echo "  Web UI:   http://localhost:8090"
 echo "  Grafana:  http://localhost:3000"
 echo ""
 
