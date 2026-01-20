@@ -59,7 +59,7 @@ COPY requirements.txt .
 # Use --user to install in user directory for easy copying to final image
 RUN pip install --user --no-warn-script-location -r requirements.txt
 
-# Stage 3: Final production image
+# Stage 3: Base production image
 FROM base AS production
 
 # Copy Python packages from builder
@@ -78,24 +78,32 @@ RUN mkdir -p /var/log/wardragon-analytics /tmp/wardragon-analytics && \
 # Switch to non-root user
 USER wardragon
 
-# Expose ports
-# 8080 - Web UI
-EXPOSE 8080
-
-# Health check
-# Checks if the application is responding (adjust URL based on service)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8080/health', timeout=5)" || exit 1
-
-# Default command (can be overridden in docker-compose.yml)
-# Collector service: python collector.py
-# Web service: uvicorn api:app --host 0.0.0.0 --port 8080
-CMD ["python", "collector.py"]
-
 # Use tini as init system to handle signals properly
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
-# Stage 4: Development image with additional tools
+# Stage 4: Collector service
+FROM production AS collector
+
+EXPOSE 5000
+
+# Collector-specific healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import os; exit(0 if os.path.exists('/tmp/collector_healthy') else 1)"
+
+CMD ["python", "collector.py"]
+
+# Stage 5: Web service
+FROM production AS web
+
+EXPOSE 8090
+
+# Web service healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import httpx; httpx.get('http://localhost:8090/health', timeout=5)" || exit 1
+
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8090"]
+
+# Stage 6: Development image with additional tools
 FROM production AS development
 
 # Switch back to root for installing dev dependencies
