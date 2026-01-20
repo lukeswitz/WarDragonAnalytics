@@ -131,9 +131,68 @@ docker-compose up -d
 
 ---
 
+## Testing
+
+WarDragon Analytics includes comprehensive test coverage with both unit and integration tests.
+
+### Quick Start
+
+```bash
+# Install test dependencies
+make install-test-deps
+
+# Run unit tests (fast, no Docker required)
+make test
+
+# Run integration tests (requires Docker Compose)
+make start
+make test-integration
+
+# Generate coverage report
+make coverage
+```
+
+### Test Categories
+
+- **Unit Tests**: Fast tests without external dependencies (70%+ coverage required)
+- **Integration Tests**: Full-stack tests with Docker Compose and database
+- **CI/CD**: Automated testing on push/PR with GitHub Actions
+
+### Test Commands
+
+| Command | Description |
+|---------|-------------|
+| `make test` | Run unit tests only |
+| `make test-integration` | Run integration tests (needs Docker) |
+| `make test-all` | Run all tests |
+| `make coverage` | Generate HTML coverage report |
+| `make test-verbose` | Run with verbose output |
+
+### Test Markers
+
+Run specific test categories using pytest markers:
+
+```bash
+pytest -m unit          # Unit tests only
+pytest -m integration   # Integration tests only
+pytest -m api           # API endpoint tests
+pytest -m database      # Database tests
+```
+
+### Coverage Requirements
+
+- **Minimum**: 70% code coverage (enforced in CI/CD)
+- **Target**: 80%+ for production code
+- **Reports**: HTML and XML coverage reports generated automatically
+
+See [TESTING.md](TESTING.md) for comprehensive testing documentation.
+
+---
+
 ## Documentation
 
 - [Architecture Design](docs/ARCHITECTURE.md) - Full system design, database schema, APIs
+- [Testing Guide](TESTING.md) - Comprehensive testing documentation
 - [Development Guide](docs/DEVELOPMENT.md) - How to contribute (coming soon)
 - [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment best practices (coming soon)
 

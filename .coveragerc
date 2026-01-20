@@ -1,0 +1,131 @@
+# Coverage.py configuration for WarDragon Analytics
+# https://coverage.readthedocs.io/
+
+[run]
+# Source code to measure coverage for
+source = app
+
+# Branch coverage (more thorough than line coverage)
+branch = True
+
+# Include patterns
+include = app/*.py
+
+# Exclude patterns (test files, migrations, etc.)
+omit =
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */venv/*
+    */env/*
+    */.venv/*
+    */migrations/*
+    */alembic/*
+    app/test_data_generator.py
+    app/validate_*.py
+    app/example_*.py
+
+# Plugins
+plugins =
+
+# Concurrency support (for async code)
+concurrency = thread,greenlet
+
+# Store data in a specific file
+data_file = .coverage
+
+# Context tracking (optional - for advanced debugging)
+# dynamic_context = test_function
+
+[report]
+# Precision for coverage percentage
+precision = 2
+
+# Show missing lines in report
+show_missing = True
+
+# Skip covered files in output
+skip_covered = False
+
+# Skip empty files
+skip_empty = True
+
+# Output format
+# Options: text, html, xml, json, lcov
+# CLI can override: pytest --cov-report=html
+
+# Lines to exclude from coverage
+exclude_lines =
+    # Standard pragma
+    pragma: no cover
+
+    # Don't complain about debug code
+    def __repr__
+    def __str__
+
+    # Don't complain if tests don't hit defensive assertion code
+    raise AssertionError
+    raise NotImplementedError
+
+    # Don't complain if non-runnable code isn't run
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    if typing.TYPE_CHECKING:
+
+    # Don't complain about abstract methods
+    @abstractmethod
+    @abc.abstractmethod
+
+    # Don't complain about pass statements
+    pass
+
+    # Don't complain about ellipsis
+    \.\.\.
+
+    # Don't complain about debug/verbose logging
+    logger\.debug
+    if DEBUG:
+    if VERBOSE:
+
+# Fail if coverage is below this threshold
+# Used in CI/CD to enforce coverage standards
+fail_under = 70
+
+# Sort results
+sort = Cover
+
+[html]
+# HTML report output directory
+directory = htmlcov
+
+# Title for HTML report
+title = WarDragon Analytics Coverage Report
+
+# Show contexts in HTML report (if context tracking enabled)
+show_contexts = False
+
+[xml]
+# XML report output file (for CI/CD tools like Codecov)
+output = coverage.xml
+
+[json]
+# JSON report output file
+output = coverage.json
+# Pretty-print JSON
+pretty_print = True
+# Show contexts
+show_contexts = False
+
+[paths]
+# Path mapping for coverage data from different environments
+# Useful if running tests in Docker but analyzing on host
+source =
+    app/
+    */site-packages/
+
+[coverage:paths]
+# Additional path mappings
+source =
+    app
+    /app
+    */WarDragonAnalytics/app

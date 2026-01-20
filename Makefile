@@ -186,3 +186,101 @@ db-kits:
 		SELECT kit_id, name, status, last_seen, api_url \
 		FROM kits \
 		ORDER BY last_seen DESC;" 2>/dev/null || echo "Table 'kits' does not exist yet"
+
+#################################
+# Testing Targets
+#################################
+
+.PHONY: test test-unit test-integration test-all coverage test-verbose test-specific install-test-deps
+
+# Install test dependencies
+install-test-deps:
+	@echo "Installing test dependencies..."
+	@pip install pytest pytest-asyncio pytest-cov pytest-mock pytest-timeout httpx
+
+# Run unit tests only (no Docker required)
+test: test-unit
+
+# Run unit tests (fast, no external dependencies)
+test-unit:
+	@echo "Running unit tests..."
+	@pytest -m unit -v
+
+# Run integration tests (requires Docker Compose)
+test-integration:
+	@echo "Running integration tests..."
+	@echo "Checking if Docker Compose is running..."
+	@docker-compose ps | grep -q "Up" || (echo "ERROR: Docker Compose services not running. Start with 'make start'" && exit 1)
+	@export RUN_INTEGRATION_TESTS=1 && pytest -m integration -v
+
+# Run all tests (unit + integration)
+test-all:
+	@echo "Running all tests..."
+	@export RUN_INTEGRATION_TESTS=1 && pytest -v
+
+# Run tests with verbose output
+test-verbose:
+	@echo "Running tests with verbose output..."
+	@pytest -vv -s
+
+# Run specific test file or function
+# Usage: make test-specific TEST=tests/test_api.py
+# Usage: make test-specific TEST=tests/test_api.py::test_health_endpoint
+test-specific:
+	@if [ -z "$(TEST)" ]; then \
+		echo "ERROR: TEST parameter required"; \
+		echo "Usage: make test-specific TEST=tests/test_api.py"; \
+		exit 1; \
+	fi
+	@echo "Running specific test: $(TEST)"
+	@pytest $(TEST) -v
+
+# Generate coverage report (HTML)
+coverage:
+	@echo "Generating coverage report..."
+	@pytest -m unit --cov=app --cov-report=html --cov-report=term
+	@echo ""
+	@echo "Coverage report generated in htmlcov/index.html"
+	@echo "Open with: firefox htmlcov/index.html"
+
+# Generate coverage report (all tests including integration)
+coverage-all:
+	@echo "Generating coverage report (all tests)..."
+	@export RUN_INTEGRATION_TESTS=1 && pytest --cov=app --cov-report=html --cov-report=term
+	@echo ""
+	@echo "Coverage report generated in htmlcov/index.html"
+
+# Generate coverage XML (for CI/CD)
+coverage-xml:
+	@echo "Generating XML coverage report..."
+	@pytest -m unit --cov=app --cov-report=xml --cov-report=term
+	@echo "Coverage XML generated: coverage.xml"
+
+# Run tests with coverage check (fail if < 70%)
+test-coverage:
+	@echo "Running tests with coverage check..."
+	@pytest -m unit --cov=app --cov-report=term --cov-fail-under=70
+
+# Clean test artifacts
+test-clean:
+	@echo "Cleaning test artifacts..."
+	@rm -rf .pytest_cache
+	@rm -rf htmlcov
+	@rm -rf .coverage
+	@rm -f coverage.xml
+	@rm -f coverage.json
+	@rm -rf tests/__pycache__
+	@rm -rf app/__pycache__
+	@rm -f tests/test-output.log
+	@echo "Test artifacts cleaned"
+
+# Run tests in watch mode (requires pytest-watch)
+# Install: pip install pytest-watch
+test-watch:
+	@echo "Running tests in watch mode..."
+	@ptw -- -m unit -v
+
+# Show test markers
+test-markers:
+	@echo "Available test markers:"
+	@pytest --markers | grep "^@pytest.mark" || pytest --markers | grep "  @"
