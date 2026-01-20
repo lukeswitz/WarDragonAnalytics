@@ -1,0 +1,257 @@
+# WarDragon Analytics - Application Settings
+#
+# Global configuration for the Analytics platform.
+# These settings apply to all services (collector, web, etc.)
+
+# Database Configuration
+database:
+  url: "postgresql://wardragon:${DB_PASSWORD}@timescaledb:5432/wardragon"
+  # PostgreSQL/TimescaleDB connection string
+  # Use environment variable ${DB_PASSWORD} for security
+  # Format: postgresql://user:password@host:port/database
+
+  pool_size: 10
+  # Maximum number of database connections in the pool
+  # Recommended: 10 for typical multi-kit deployments
+  # Increase for high-throughput scenarios (20+ kits)
+
+  pool_timeout: 30
+  # Connection pool checkout timeout in seconds
+  # Increase if seeing "pool timeout" errors under load
+
+  echo: false
+  # Enable SQLAlchemy query logging (for debugging)
+  # WARNING: Generates large log volumes, use only for troubleshooting
+
+# Collector Service Settings
+collector:
+  poll_interval: 5
+  # Default polling interval for /drones and /signals endpoints (seconds)
+  # Per-kit overrides available in kits.yaml
+  # Range: 1-60 seconds (5 recommended for real-time tracking)
+
+  status_interval: 30
+  # Default polling interval for /status endpoint (seconds)
+  # Can be less frequent than drone polling to reduce overhead
+  # Range: 10-300 seconds
+
+  timeout: 10
+  # Default HTTP request timeout (seconds)
+  # Increase for slow networks or cellular connections
+
+  retry_policy:
+    max_retries: 3
+    # Number of consecutive failures before marking kit offline
+    # Kit is marked online again on first successful poll
+
+    backoff_multiplier: 2.0
+    # Exponential backoff multiplier between retries
+    # Wait time = base_delay * (backoff_multiplier ^ retry_count)
+    # Example: 5s, 10s, 20s, 40s...
+
+    base_delay: 5
+    # Initial retry delay in seconds after first failure
+
+    max_delay: 300
+    # Maximum retry delay cap (5 minutes)
+    # Prevents infinite exponential growth
+
+  batch_size: 100
+  # Maximum records to insert in a single database transaction
+  # Larger batches = better performance but higher memory usage
+  # Range: 50-1000
+
+  queue_size: 1000
+  # Maximum items in processing queue before blocking
+  # Prevents memory overflow if database writes are slow
+
+  user_agent: "WarDragonAnalytics/1.0"
+  # HTTP User-Agent header sent to DragonSync APIs
+  # Useful for API logging and debugging
+
+# Data Retention Policies
+retention:
+  drones_raw: 30
+  # Days to retain raw drone track data in 'drones' hypertable
+  # Older data is automatically deleted by TimescaleDB retention policy
+  # Range: 1-365 days (30 recommended)
+
+  signals_raw: 30
+  # Days to retain raw FPV signal detections in 'signals' hypertable
+  # Range: 1-365 days
+
+  system_health_raw: 90
+  # Days to retain raw system health metrics
+  # Typically kept longer than drone data for trend analysis
+  # Range: 7-365 days
+
+  aggregates: 365
+  # Days to retain continuous aggregates (hourly/daily rollups)
+  # Provides long-term historical analysis
+  # Range: 30-1825 days (1-5 years)
+
+  offline_kits: 7
+  # Days to retain data for kits that haven't reported
+  # Prevents database bloat from abandoned/decommissioned kits
+  # Set to 0 to keep forever
+
+# Continuous Aggregates
+aggregates:
+  enabled: true
+  # Enable creation and refresh of continuous aggregates
+  # Disable if running on very low-resource systems
+
+  refresh_interval: 3600
+  # How often to refresh continuous aggregates (seconds)
+  # 3600 = 1 hour (recommended)
+  # Lower values = more current data but higher CPU usage
+
+  time_buckets:
+    - interval: "1 hour"
+      retention: 365  # 1 year
+    - interval: "1 day"
+      retention: 1825  # 5 years
+    - interval: "1 week"
+      retention: 3650  # 10 years
+  # Time bucket intervals for rollup aggregates
+  # Smaller buckets = finer granularity but more storage
+
+# Web UI Settings
+web:
+  host: "0.0.0.0"
+  # Bind address for web server
+  # 0.0.0.0 = listen on all interfaces
+  # 127.0.0.1 = localhost only (for reverse proxy setups)
+
+  port: 8080
+  # HTTP port for web interface
+
+  debug: false
+  # Enable debug mode (auto-reload, detailed errors)
+  # WARNING: Never enable in production (security risk)
+
+  cors_origins:
+    - "http://localhost:3000"
+    - "https://analytics.example.com"
+  # Allowed CORS origins for API access
+  # Add Grafana URL and any external consumers
+
+  max_query_range: 7
+  # Maximum days allowed in API query time ranges
+  # Prevents expensive queries that could overload database
+  # Range: 1-90 days
+
+  export_limits:
+    csv_rows: 100000
+    # Maximum rows in CSV export
+    # Prevents OOM on large exports
+
+    kml_points: 10000
+    # Maximum points in KML export
+    # Google Earth performance limit
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  # Use DEBUG for development, INFO for production
+
+  format: "json"
+  # Log format: json or text
+  # JSON recommended for centralized log aggregation
+
+  file: "/var/log/wardragon-analytics/app.log"
+  # Log file path (inside container)
+  # Mount volume for persistent logs
+
+  rotation:
+    max_bytes: 104857600  # 100 MB
+    # Maximum log file size before rotation
+
+    backup_count: 10
+    # Number of rotated log files to keep
+    # Total disk usage = max_bytes * (backup_count + 1)
+
+# Alerting (Future Phase 3 feature)
+alerts:
+  enabled: false
+  # Enable alerting system
+  # Requires alert rules configuration (not yet implemented)
+
+  check_interval: 60
+  # How often to evaluate alert rules (seconds)
+
+  webhooks:
+    - name: "Slack Notifications"
+      url: "https://hooks.slack.com/services/YOUR/WEBHOOK/HERE"
+      enabled: false
+    - name: "Email Alerts"
+      url: "smtp://smtp.example.com:587"
+      enabled: false
+  # Webhook endpoints for alert delivery
+  # Supports Slack, Discord, PagerDuty, generic HTTP POST
+
+# Geofencing (Future Phase 3 feature)
+geofences:
+  enabled: false
+  # Enable geofence alert system
+
+  zones:
+    - name: "Restricted Airspace"
+      polygon: []  # Array of [lat, lon] coordinates
+      alert_on_entry: true
+      alert_on_exit: false
+    - name: "Airport NFZ"
+      center: [40.6413, -73.7781]  # JFK Airport example
+      radius_meters: 8000
+      alert_on_entry: true
+  # Geofence definitions
+  # Triggers alerts when drones enter/exit zones
+
+# Performance Monitoring
+monitoring:
+  metrics_enabled: true
+  # Expose Prometheus metrics endpoint at /metrics
+
+  healthcheck_enabled: true
+  # Expose health check endpoint at /health
+
+  profiling_enabled: false
+  # Enable cProfile profiling (development only)
+  # WARNING: Significant performance impact
+
+# Feature Flags
+features:
+  aircraft_tracking: true
+  # Enable ADS-B aircraft tracking in addition to drones
+
+  signal_collection: true
+  # Enable FPV signal detection collection
+
+  rid_enrichment: false
+  # Enable FAA Remote ID enrichment (requires API key)
+  # Phase 4 feature - not yet implemented
+
+  authentication: false
+  # Enable user authentication for web UI
+  # Phase 4 feature - not yet implemented
+
+  api_keys: false
+  # Require API keys for kit-to-analytics communication
+  # Phase 4 feature - not yet implemented
+
+# Miscellaneous
+misc:
+  timezone: "UTC"
+  # Default timezone for timestamps
+  # Recommend UTC for multi-region deployments
+
+  date_format: "%Y-%m-%d %H:%M:%S"
+  # Timestamp format for logs and exports
+
+  temp_dir: "/tmp/wardragon-analytics"
+  # Temporary directory for exports and processing
+
+  max_workers: 4
+  # Number of worker threads for parallel processing
+  # Recommend: number of CPU cores

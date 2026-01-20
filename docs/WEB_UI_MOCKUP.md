@@ -149,7 +149,7 @@ Click `[+ Add Kit]` button:
 │ [Field Operations          ]     │
 │                                  │
 │ [Test Connection]                │
-│ ✅ Connection successful!        │
+│ Connection successful!           │
 │ Kit is online and responding.    │
 │                                  │
 │     [Cancel]     [Add Kit]       │

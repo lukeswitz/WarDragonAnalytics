@@ -1,0 +1,43 @@
+# WarDragon Kit Configuration
+# Define the WarDragon kits that this Analytics instance will collect data from
+
+kits:
+  # Example: Single local kit (for testing or single-kit deployments)
+  - id: local-kit
+    name: "Local WarDragon Kit"
+    api_url: "http://127.0.0.1:8088"
+    location: "Local"
+    enabled: true
+
+  # Example: Remote kit on local network
+  # - id: kit-001
+  #   name: "Mobile Unit Alpha"
+  #   api_url: "http://192.168.1.100:8088"
+  #   location: "Field Operations"
+  #   enabled: true
+
+  # Example: Another remote kit
+  # - id: kit-002
+  #   name: "Mobile Unit Bravo"
+  #   api_url: "http://192.168.1.101:8088"
+  #   location: "Field Operations"
+  #   enabled: true
+
+  # Example: Fixed site kit
+  # - id: kit-003
+  #   name: "Fixed Site Charlie"
+  #   api_url: "http://10.0.0.50:8088"
+  #   location: "Headquarters"
+  #   enabled: false  # Disabled - will not be polled
+
+# Configuration notes:
+# - id: Unique identifier for the kit (alphanumeric, hyphens, underscores)
+# - name: Human-readable name for display
+# - api_url: Full URL to DragonSync API endpoint (default port 8088)
+# - location: Optional location description
+# - enabled: Set to false to temporarily disable polling without removing config
+#
+# Security notes:
+# - Ensure kits are on a trusted network or use VPN
+# - Future versions will support API key authentication
+# - Rate limiting: DragonSync allows 100 requests per 60 seconds per IP

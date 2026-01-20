@@ -1,0 +1,60 @@
+# Systemd service unit for WarDragon Analytics
+#
+# Installation:
+#   1. Copy this file to /etc/systemd/system/
+#      sudo cp wardragon-analytics.service /etc/systemd/system/
+#
+#   2. Update WorkingDirectory path to match your installation
+#      sudo nano /etc/systemd/system/wardragon-analytics.service
+#
+#   3. Enable and start the service
+#      sudo systemctl daemon-reload
+#      sudo systemctl enable wardragon-analytics
+#      sudo systemctl start wardragon-analytics
+#
+# Management:
+#   sudo systemctl status wardragon-analytics
+#   sudo systemctl stop wardragon-analytics
+#   sudo systemctl restart wardragon-analytics
+#   sudo journalctl -u wardragon-analytics -f
+
+[Unit]
+Description=WarDragon Analytics - Drone Surveillance Data Platform
+Documentation=https://github.com/yourusername/wardragon-analytics
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# IMPORTANT: Update this path to your installation directory
+WorkingDirectory=/opt/wardragon-analytics
+
+# Use production compose file
+ExecStart=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+ExecStop=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+
+# Restart policy
+Restart=on-failure
+RestartSec=30s
+
+# Security hardening
+# Run as non-root user (update to your user)
+User=wardragon
+Group=wardragon
+
+# Environment file
+EnvironmentFile=/opt/wardragon-analytics/.env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wardragon-analytics
+
+# Resource limits (optional)
+# MemoryLimit=4G
+# CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

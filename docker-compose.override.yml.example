@@ -1,0 +1,67 @@
+# Docker Compose Override Example
+# Copy this file to docker-compose.override.yml for local development
+# This file is automatically used by docker-compose and merges with docker-compose.yml
+#
+# Usage:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#   # Edit docker-compose.override.yml as needed
+#   docker-compose up -d
+
+version: '3.8'
+
+services:
+  # Development overrides for collector
+  collector:
+    # Mount source code for live development
+    volumes:
+      - ./app:/app:ro
+      - ./config:/config:ro
+      - ./logs/collector:/app/logs
+    environment:
+      # Enable debug mode
+      LOG_LEVEL: DEBUG
+      # More frequent polling for testing
+      POLL_INTERVAL_DRONES: 2
+      POLL_INTERVAL_STATUS: 10
+
+  # Development overrides for web
+  web:
+    # Mount source code for live development
+    volumes:
+      - ./app:/app:ro
+    environment:
+      # Enable debug mode
+      LOG_LEVEL: DEBUG
+      # Hot reload for development
+      RELOAD: "true"
+    # Expose additional port for debugging
+    ports:
+      - "8080:8080"
+      - "5678:5678"  # Python debugger port
+
+  # Development overrides for TimescaleDB
+  timescaledb:
+    # Expose port for direct database access during development
+    ports:
+      - "5432:5432"  # Exposed to host for database tools
+    environment:
+      # Enable query logging for development
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    command:
+      - "postgres"
+      - "-c"
+      - "log_statement=all"  # Log all queries (verbose!)
+      - "-c"
+      - "log_min_duration_statement=0"  # Log all query durations
+
+  # Development overrides for Grafana
+  grafana:
+    environment:
+      # Enable development mode
+      GF_LOG_LEVEL: debug
+      # Allow anonymous access for testing
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+    # Expose port
+    ports:
+      - "3000:3000"

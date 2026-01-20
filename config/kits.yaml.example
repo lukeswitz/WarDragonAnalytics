@@ -1,0 +1,126 @@
+# WarDragon Analytics - Kit Configuration
+#
+# This file defines the WarDragon kits that this Analytics instance will monitor.
+# Each kit must be running DragonSync with the HTTP API enabled (default port 8088).
+#
+# USAGE:
+#   1. Copy this file to kits.yaml: cp kits.yaml.example kits.yaml
+#   2. Edit kits.yaml with your actual kit details
+#   3. Restart the collector service to apply changes
+#
+# DEPLOYMENT SCENARIOS:
+#   - Single-kit local: Point to http://127.0.0.1:8088
+#   - Multi-kit centralized: Add multiple kits with their network IPs
+#   - Hybrid: Mix of local and remote kits
+
+kits:
+  # Mobile Kit 1 - Field vehicle with portable setup
+  - id: mobile-alpha-001
+    # Unique identifier for this kit (alphanumeric, hyphens allowed)
+    # Used as primary key in database and for tracking
+
+    name: "Mobile Unit Alpha"
+    # Human-readable name displayed in UI and dashboards
+
+    api_url: "http://192.168.1.100:8088"
+    # Full URL to DragonSync API endpoint
+    # Must be accessible from the Analytics server
+    # Default DragonSync port is 8088
+
+    location: "Mobile Vehicle 1"
+    # Description of physical location or deployment
+    # Helpful for organizing multiple kits
+
+    enabled: true
+    # Set to false to temporarily disable polling without removing the kit
+    # Useful for maintenance or testing
+
+    poll_interval: 5
+    # How often to poll /drones and /signals endpoints (seconds)
+    # Default: 5 seconds (from settings.yaml)
+    # Lower values = more real-time but higher network/CPU load
+
+    status_interval: 30
+    # How often to poll /status endpoint for health metrics (seconds)
+    # Default: 30 seconds (from settings.yaml)
+    # Can be less frequent than drone polling to reduce overhead
+
+    timeout: 10
+    # HTTP request timeout in seconds
+    # Default: 10 seconds (from settings.yaml)
+    # Increase for slow/cellular network connections
+
+    tags:
+      - mobile
+      - field-ops
+      - team-1
+    # Optional tags for filtering and organization
+    # Used in Grafana dashboards and web UI filters
+
+  # Fixed Installation - Permanent monitoring site
+  - id: fixed-hq-002
+    name: "HQ Fixed Site Bravo"
+    api_url: "http://10.0.0.50:8088"
+    location: "Headquarters Rooftop"
+    enabled: true
+    poll_interval: 5
+    status_interval: 60  # Less frequent for stable fixed site
+    timeout: 10
+    tags:
+      - fixed
+      - hq
+      - permanent
+
+  # Remote Kit - Cellular/VPN connected kit
+  - id: remote-charlie-003
+    name: "Remote Site Charlie"
+    api_url: "https://wardragon-charlie.example.com:8088"
+    # Using HTTPS with domain name for remote access
+    # Ensure DragonSync is configured with valid TLS certificate
+
+    location: "Remote Field Site"
+    enabled: true
+    poll_interval: 10  # Slower polling for remote/cellular link
+    status_interval: 60
+    timeout: 30  # Longer timeout for high-latency connections
+    tags:
+      - remote
+      - cellular
+      - field-ops
+
+    retry_policy:
+      # Optional: Custom retry behavior for unreliable connections
+      max_retries: 5
+      # Number of consecutive failures before marking kit offline
+      # Default: 3 (from settings.yaml)
+
+      backoff_multiplier: 2.0
+      # Exponential backoff multiplier between retries
+      # Default: 2.0 (from settings.yaml)
+      # Wait time = base_delay * (backoff_multiplier ^ retry_count)
+
+      base_delay: 5
+      # Initial retry delay in seconds
+      # Default: 5 (from settings.yaml)
+
+# SINGLE-KIT LOCAL DEPLOYMENT EXAMPLE:
+# Uncomment this section for local-only analytics on the same machine as DragonSync
+#
+# kits:
+#   - id: local-kit
+#     name: "Local WarDragon Kit"
+#     api_url: "http://127.0.0.1:8088"
+#     location: "Localhost"
+#     enabled: true
+
+# NOTES:
+# - Kit IDs must be unique across all configured kits
+# - API URLs must include protocol (http:// or https://)
+# - DragonSync API endpoints consumed:
+#   * GET /status - System health, GPS, CPU, memory, disk, temps
+#   * GET /drones - Drone/aircraft tracks (Remote ID + ADS-B)
+#   * GET /signals - FPV signal detections (analog + DJI)
+#   * GET /config - Sanitized configuration (for compatibility check)
+# - Collector service polls enabled kits in parallel using asyncio
+# - Offline kits are automatically retried with exponential backoff
+# - Kit health status is tracked in the database 'kits' table

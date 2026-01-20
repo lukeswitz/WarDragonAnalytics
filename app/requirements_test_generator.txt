@@ -1,0 +1,9 @@
+# Requirements for WarDragon Analytics Test Data Generator
+#
+# Install with: pip install -r requirements_test_generator.txt
+
+# Database driver (for --mode=db)
+psycopg2-binary>=2.9.9
+
+# Optional: for future JSON export support
+# python-dateutil>=2.8.2
