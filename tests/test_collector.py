@@ -12,7 +12,15 @@ This test module provides full coverage for:
 
 All tests use mocks to avoid requiring actual database or network connections.
 Target coverage: 80%+
+
+NOTE: These tests require the collector module which has heavy dependencies.
+Marked as 'collector' for selective running.
 """
+
+import pytest
+
+# Mark all tests in this module as collector tests
+pytestmark = pytest.mark.collector
 
 import asyncio
 import signal

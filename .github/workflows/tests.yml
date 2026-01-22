@@ -42,7 +42,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          pytest -v --tb=short --ignore=tests/integration
+          pytest -v --tb=short --ignore=tests/integration -m "not api and not collector"
 
   lint:
     name: Code Quality

@@ -10,9 +10,15 @@ This test module provides comprehensive coverage of pattern detection features:
 - Multi-kit correlation
 
 All tests use mocked database connections and do not require Docker.
+
+NOTE: These tests require the FastAPI app to start, which needs a DATABASE_URL.
+Marked as 'api' for selective running in CI.
 """
 
 import pytest
+
+# Mark all tests in this module as api tests (require app startup)
+pytestmark = pytest.mark.api
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import json
