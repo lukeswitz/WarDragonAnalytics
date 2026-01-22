@@ -23,12 +23,12 @@ python app/test_data_generator.py --mode=db --duration=2h --kits=3 --drones=15
 ```
 
 **Key Features:**
-- ✓ Realistic drone makes/models (DJI, Autel, Skydio, Parrot)
-- ✓ Waypoint-based flight simulation
-- ✓ Time progression with 5-second intervals
-- ✓ Batch inserts for performance (1,000 records per batch)
-- ✓ Conflict handling (ON CONFLICT DO NOTHING)
-- ✓ Progress reporting
+- Realistic drone makes/models (DJI, Autel, Skydio, Parrot)
+- Waypoint-based flight simulation
+- Time progression with 5-second intervals
+- Batch inserts for performance (1,000 records per batch)
+- Conflict handling (ON CONFLICT DO NOTHING)
+- Progress reporting
 
 ---
 

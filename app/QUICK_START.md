@@ -70,14 +70,14 @@ Total records: 52,792
 
 ## Realistic Data Features
 
-✓ **DJI, Autel, Skydio, Parrot** makes/models
-✓ **Waypoint-based flight paths** (not random GPS)
-✓ **Realistic speeds** (5-20 m/s) and altitudes (30-120m)
-✓ **Pilot and home locations** within 5km of kit
-✓ **Flight durations** 5-45 minutes
-✓ **RSSI signal strength** -90 to -40 dBm
-✓ **FAA operator IDs** and serial numbers
-✓ **System health variation** (CPU spikes, temp changes)
+- **DJI, Autel, Skydio, Parrot** makes/models
+- **Waypoint-based flight paths** (not random GPS)
+- **Realistic speeds** (5-20 m/s) and altitudes (30-120m)
+- **Pilot and home locations** within 5km of kit
+- **Flight durations** 5-45 minutes
+- **RSSI signal strength** -90 to -40 dBm
+- **FAA operator IDs** and serial numbers
+- **System health variation** (CPU spikes, temp changes)
 
 ## Troubleshooting
 
