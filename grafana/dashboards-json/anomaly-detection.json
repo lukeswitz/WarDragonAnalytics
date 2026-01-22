@@ -642,7 +642,7 @@
         "type": "postgres",
         "uid": "timescaledb"
       },
-      "description": "Drones that remained in a small area for extended periods - using pre-defined detect_loitering() function",
+      "description": "Drones that remained in a small area (<200m radius) for extended periods (3+ min)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -742,7 +742,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "-- Using pre-defined detect_loitering() function\nSELECT \n  drone_id AS \"Drone ID\",\n  kit_id AS \"Kit\",\n  ROUND(duration_seconds::NUMERIC) AS \"Duration (s)\",\n  ROUND(radius_m::NUMERIC, 1) AS \"Radius (m)\",\n  ROUND(center_lat::NUMERIC, 5) AS \"Center Lat\",\n  ROUND(center_lon::NUMERIC, 5) AS \"Center Lon\",\n  start_time AS \"Start\",\n  end_time AS \"End\"\nFROM detect_loitering($__timeFrom()::TIMESTAMPTZ, $__timeTo()::TIMESTAMPTZ, INTERVAL '3 minutes', 100.0)\nWHERE ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\nORDER BY duration_seconds DESC\nLIMIT 50;",
+          "rawSql": "-- Detect drones that remain in a small geographic area\nWITH drone_positions AS (\n  SELECT drone_id, kit_id, time, lat, lon\n  FROM drones\n  WHERE time >= $__timeFrom() AND time <= $__timeTo()\n    AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n    AND lat IS NOT NULL AND lon IS NOT NULL\n    AND track_type = 'drone'\n),\ndrone_bounds AS (\n  SELECT \n    drone_id, kit_id,\n    COUNT(*) AS detection_count,\n    MIN(time) AS start_time, MAX(time) AS end_time,\n    EXTRACT(EPOCH FROM (MAX(time) - MIN(time))) AS duration_seconds,\n    AVG(lat) AS center_lat, AVG(lon) AS center_lon,\n    GREATEST((MAX(lat)-MIN(lat))*111000, (MAX(lon)-MIN(lon))*111000*COS(RADIANS(AVG(lat))))/2 AS radius_m\n  FROM drone_positions\n  GROUP BY drone_id, kit_id\n  HAVING COUNT(*) >= 3 AND EXTRACT(EPOCH FROM (MAX(time) - MIN(time))) >= 180\n)\nSELECT \n  drone_id AS \"Drone ID\", kit_id AS \"Kit\",\n  ROUND(duration_seconds::NUMERIC) AS \"Duration (s)\",\n  ROUND(radius_m::NUMERIC, 1) AS \"Radius (m)\",\n  ROUND(center_lat::NUMERIC, 5) AS \"Center Lat\",\n  ROUND(center_lon::NUMERIC, 5) AS \"Center Lon\",\n  start_time AS \"Start\", end_time AS \"End\"\nFROM drone_bounds WHERE radius_m < 200\nORDER BY duration_seconds DESC LIMIT 50;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -763,7 +763,7 @@
           }
         }
       ],
-      "title": "Loitering Detection (Optimized Function)",
+      "title": "Loitering Detection",
       "type": "table"
     },
     {
@@ -771,7 +771,7 @@
         "type": "postgres",
         "uid": "timescaledb"
       },
-      "description": "Drones detected dropping altitude rapidly - using pre-defined detect_rapid_descent() function",
+      "description": "Drones with rapid altitude drops (>10m at >3 m/s) - potential payload delivery",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -871,7 +871,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "-- Using pre-defined detect_rapid_descent() function\nSELECT \n  drone_id AS \"Drone ID\",\n  kit_id AS \"Kit\",\n  ROUND(descent_rate::NUMERIC, 1) AS \"Descent Rate (m/s)\",\n  ROUND(altitude_drop::NUMERIC, 1) AS \"Alt Drop (m)\",\n  ROUND(start_alt::NUMERIC, 0) AS \"Start Alt (m)\",\n  ROUND(end_alt::NUMERIC, 0) AS \"End Alt (m)\",\n  time AS \"Detection Time\"\nFROM detect_rapid_descent($__timeFrom()::TIMESTAMPTZ, $__timeTo()::TIMESTAMPTZ, -5.0)\nWHERE ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\nORDER BY descent_rate ASC\nLIMIT 50;",
+          "rawSql": "-- Detect rapid altitude descents\nWITH ordered_positions AS (\n  SELECT drone_id, kit_id, time, alt,\n    LAG(alt) OVER (PARTITION BY drone_id ORDER BY time) AS prev_alt,\n    LAG(time) OVER (PARTITION BY drone_id ORDER BY time) AS prev_time\n  FROM drones\n  WHERE time >= $__timeFrom() AND time <= $__timeTo()\n    AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n    AND alt IS NOT NULL AND track_type = 'drone'\n),\ndescent_events AS (\n  SELECT drone_id, kit_id, time, alt, prev_alt,\n    (prev_alt - alt) AS altitude_drop,\n    (prev_alt - alt) / NULLIF(EXTRACT(EPOCH FROM (time - prev_time)), 0) AS descent_rate\n  FROM ordered_positions\n  WHERE prev_alt IS NOT NULL AND (prev_alt - alt) >= 10\n    AND (prev_alt - alt) / NULLIF(EXTRACT(EPOCH FROM (time - prev_time)), 0) >= 3\n)\nSELECT \n  drone_id AS \"Drone ID\", kit_id AS \"Kit\",\n  ROUND(descent_rate::NUMERIC, 1) AS \"Descent Rate (m/s)\",\n  ROUND(altitude_drop::NUMERIC, 1) AS \"Alt Drop (m)\",\n  ROUND(prev_alt::NUMERIC, 0) AS \"Start Alt (m)\",\n  ROUND(alt::NUMERIC, 0) AS \"End Alt (m)\",\n  time AS \"Detection Time\"\nFROM descent_events\nORDER BY descent_rate DESC LIMIT 50;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -892,7 +892,7 @@
           }
         }
       ],
-      "title": "Rapid Descent Detection (Optimized Function)",
+      "title": "Rapid Descent Detection",
       "type": "table"
     },
     {
@@ -900,7 +900,7 @@
         "type": "postgres",
         "uid": "timescaledb"
       },
-      "description": "Drones operating during nighttime hours (10PM-5AM) - using pre-defined detect_night_activity() function",
+      "description": "Drones operating during nighttime hours (10PM-5AM) - higher risk of unauthorized activity",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -980,7 +980,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "-- Using pre-defined detect_night_activity() function\nSELECT \n  drone_id AS \"Drone ID\",\n  kit_id AS \"Kit\",\n  detection_count AS \"Detections\",\n  first_seen AS \"First Seen\",\n  last_seen AS \"Last Seen\",\n  ROUND(avg_alt::NUMERIC, 0) AS \"Avg Alt (m)\",\n  ROUND(max_speed::NUMERIC, 1) AS \"Max Speed (m/s)\"\nFROM detect_night_activity($__timeFrom()::TIMESTAMPTZ, $__timeTo()::TIMESTAMPTZ)\nWHERE ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\nORDER BY detection_count DESC, last_seen DESC\nLIMIT 50;",
+          "rawSql": "-- Detect drone activity during night hours (10PM-5AM)\nSELECT \n  drone_id AS \"Drone ID\",\n  kit_id AS \"Kit\",\n  COUNT(*) AS \"Detections\",\n  MIN(time) AS \"First Seen\",\n  MAX(time) AS \"Last Seen\",\n  ROUND(AVG(alt)::NUMERIC, 0) AS \"Avg Alt (m)\",\n  ROUND(MAX(speed)::NUMERIC, 1) AS \"Max Speed (m/s)\"\nFROM drones\nWHERE time >= $__timeFrom() AND time <= $__timeTo()\n  AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n  AND lat IS NOT NULL AND lon IS NOT NULL\n  AND track_type = 'drone'\n  AND (EXTRACT(HOUR FROM time) >= 22 OR EXTRACT(HOUR FROM time) <= 5)\nGROUP BY drone_id, kit_id\nORDER BY COUNT(*) DESC, MAX(time) DESC\nLIMIT 50;",
           "refId": "A",
           "sql": {
             "columns": [

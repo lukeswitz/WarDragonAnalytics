@@ -152,18 +152,18 @@
         "type": "postgres",
         "uid": "timescaledb"
       },
-      "description": "Geographic coverage areas of all kits showing overlap zones where triangulation is possible",
+      "description": "Kit coverage data with coordinates (use 8090 web UI for interactive map)",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
           "custom": {
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            }
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
           },
           "mappings": [],
           "thresholds": {
@@ -172,11 +172,46 @@
               {
                 "color": "green",
                 "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
               }
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "detections"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "coordinates"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 12,
@@ -186,76 +221,20 @@
       },
       "id": 2,
       "options": {
-        "basemap": {
-          "config": {},
-          "name": "Layer 0",
-          "type": "none"
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
         },
-        "controls": {
-          "mouseWheelZoom": true,
-          "showAttribution": true,
-          "showDebug": false,
-          "showMeasure": false,
-          "showScale": false,
-          "showZoom": true
-        },
-        "layers": [
+        "showHeader": true,
+        "sortBy": [
           {
-            "config": {
-              "showLegend": true,
-              "style": {
-                "color": {
-                  "field": "kit_id",
-                  "fixed": "dark-green"
-                },
-                "opacity": 0.4,
-                "rotation": {
-                  "fixed": 0,
-                  "max": 360,
-                  "min": 0,
-                  "mode": "mod"
-                },
-                "size": {
-                  "field": "detections",
-                  "fixed": 5,
-                  "max": 20,
-                  "min": 5
-                },
-                "symbol": {
-                  "fixed": "img/icons/marker/circle.svg",
-                  "mode": "fixed"
-                },
-                "textConfig": {
-                  "fontSize": 12,
-                  "offsetX": 0,
-                  "offsetY": 0,
-                  "textAlign": "center",
-                  "textBaseline": "middle"
-                }
-              }
-            },
-            "location": {
-              "mode": "coords",
-              "coords": {
-                "latitude": "lat",
-                "longitude": "lon"
-              }
-            },
-            "name": "Kit Coverage",
-            "tooltip": true,
-            "type": "markers"
+            "desc": true,
+            "displayName": "detections"
           }
-        ],
-        "tooltip": {
-          "mode": "details"
-        },
-        "view": {
-          "allLayers": true,
-          "id": "zero",
-          "lat": 0,
-          "lon": 0,
-          "zoom": 2
-        }
+        ]
       },
       "pluginVersion": "10.0.0",
       "targets": [
@@ -267,7 +246,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "-- Show kit positions and detection coverage\nWITH kit_coverage AS (\n  SELECT \n    sh.kit_id,\n    sh.lat,\n    sh.lon,\n    sh.alt,\n    COUNT(DISTINCT d.drone_id) AS detections\n  FROM system_health sh\n  LEFT JOIN drones d ON sh.kit_id = d.kit_id \n    AND d.time >= $__timeFrom()\n    AND d.time <= $__timeTo()\n  WHERE sh.time >= $__timeFrom()\n    AND sh.time <= $__timeTo()\n    AND sh.lat IS NOT NULL\n    AND sh.lon IS NOT NULL\n  GROUP BY sh.kit_id, sh.lat, sh.lon, sh.alt\n)\nSELECT \n  kit_id,\n  AVG(lat) AS lat,\n  AVG(lon) AS lon,\n  AVG(alt) AS alt,\n  SUM(detections) AS detections\nFROM kit_coverage\nGROUP BY kit_id;",
+          "rawSql": "-- Show kit positions and detection coverage\nWITH kit_coverage AS (\n  SELECT \n    sh.kit_id,\n    sh.lat,\n    sh.lon,\n    sh.alt,\n    COUNT(DISTINCT d.drone_id) AS detections\n  FROM system_health sh\n  LEFT JOIN drones d ON sh.kit_id = d.kit_id \n    AND d.time >= $__timeFrom()\n    AND d.time <= $__timeTo()\n  WHERE sh.time >= $__timeFrom()\n    AND sh.time <= $__timeTo()\n    AND sh.lat IS NOT NULL\n    AND sh.lon IS NOT NULL\n  GROUP BY sh.kit_id, sh.lat, sh.lon, sh.alt\n)\nSELECT \n  kit_id AS \"Kit ID\",\n  ROUND(AVG(lat)::numeric, 6) || ', ' || ROUND(AVG(lon)::numeric, 6) AS coordinates,\n  ROUND(AVG(alt)::numeric, 1) AS altitude_m,\n  SUM(detections) AS detections\nFROM kit_coverage\nGROUP BY kit_id\nORDER BY detections DESC;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -288,8 +267,8 @@
           }
         }
       ],
-      "title": "Kit Coverage Overlap Map",
-      "type": "geomap"
+      "title": "Kit Coverage Data",
+      "type": "table"
     },
     {
       "datasource": {

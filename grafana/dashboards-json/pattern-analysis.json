@@ -224,7 +224,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "-- Find operators controlling multiple drones via operator_id match\nWITH operator_matches AS (\n  SELECT \n    operator_id AS identifier,\n    'operator_id' AS method,\n    COUNT(DISTINCT drone_id) AS drone_count,\n    ARRAY_AGG(DISTINCT drone_id) AS drones,\n    MIN(time) AS first_seen,\n    MAX(time) AS last_seen\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n    AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n    AND operator_id IS NOT NULL\n    AND operator_id != ''\n  GROUP BY operator_id\n  HAVING COUNT(DISTINCT drone_id) > 1\n),\n-- Find pilots in close proximity with different drones\npilot_proximity AS (\n  SELECT \n    CONCAT('Pilot@', ROUND(d1.pilot_lat::NUMERIC, 4), ',', ROUND(d1.pilot_lon::NUMERIC, 4)) AS identifier,\n    'proximity' AS method,\n    COUNT(DISTINCT d1.drone_id) AS drone_count,\n    ARRAY_AGG(DISTINCT d1.drone_id) AS drones,\n    MIN(d1.time) AS first_seen,\n    MAX(d1.time) AS last_seen\n  FROM drones d1\n  WHERE d1.time >= $__timeFrom()\n    AND d1.time <= $__timeTo()\n    AND ($kit_filter = 'All' OR d1.kit_id = $kit_filter)\n    AND d1.pilot_lat IS NOT NULL\n    AND d1.pilot_lon IS NOT NULL\n  GROUP BY ROUND(d1.pilot_lat::NUMERIC, 4), ROUND(d1.pilot_lon::NUMERIC, 4)\n  HAVING COUNT(DISTINCT d1.drone_id) > 1\n)\nSELECT \n  identifier AS \"Operator/Location\",\n  method AS \"Detection Method\",\n  drone_count AS \"Drones\",\n  ARRAY_TO_STRING(drones, ', ') AS \"Drone IDs\",\n  first_seen AS \"First Seen\",\n  last_seen AS \"Last Seen\"\nFROM (\n  SELECT * FROM operator_matches\n  UNION ALL\n  SELECT * FROM pilot_proximity\n) combined\nORDER BY drone_count DESC, last_seen DESC\nLIMIT 50;",
+          "rawSql": "-- Find operators controlling multiple drones via operator_id match\nWITH operator_matches AS (\n  SELECT \n    operator_id AS identifier,\n    'operator_id' AS method,\n    COUNT(DISTINCT drone_id) AS drone_count,\n    ARRAY_AGG(DISTINCT drone_id) AS drones,\n    MIN(time) AS first_seen,\n    MAX(time) AS last_seen\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n    AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n    AND operator_id IS NOT NULL\n    AND operator_id != ''\n  GROUP BY operator_id\n  HAVING COUNT(DISTINCT drone_id) > 1\n),\n-- Find pilots in close proximity with different drones\npilot_proximity AS (\n  SELECT \n    CONCAT('Pilot@', ROUND(pilot_lat::NUMERIC, 4), ',', ROUND(pilot_lon::NUMERIC, 4)) AS identifier,\n    'proximity' AS method,\n    COUNT(DISTINCT drone_id) AS drone_count,\n    ARRAY_AGG(DISTINCT drone_id) AS drones,\n    MIN(time) AS first_seen,\n    MAX(time) AS last_seen\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n    AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n    AND pilot_lat IS NOT NULL\n    AND pilot_lon IS NOT NULL\n  GROUP BY ROUND(pilot_lat::NUMERIC, 4), ROUND(pilot_lon::NUMERIC, 4)\n  HAVING COUNT(DISTINCT drone_id) > 1\n)\nSELECT \n  identifier AS \"Operator/Location\",\n  method AS \"Detection Method\",\n  drone_count AS \"Drones\",\n  ARRAY_TO_STRING(drones, ', ') AS \"Drone IDs\",\n  first_seen AS \"First Seen\",\n  last_seen AS \"Last Seen\"\nFROM (\n  SELECT * FROM operator_matches\n  UNION ALL\n  SELECT * FROM pilot_proximity\n) combined\nORDER BY drone_count DESC, last_seen DESC\nLIMIT 50;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -444,7 +444,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "-- Using pre-defined detect_coordinated_activity function for optimized detection\nSELECT \n  CONCAT('Group-', ROW_NUMBER() OVER (ORDER BY time_window DESC)) AS \"Group ID\",\n  drone_count AS \"Group Size\",\n  ARRAY_TO_STRING(drone_ids, ', ') AS \"Drone IDs\",\n  ARRAY_TO_STRING(kit_ids, ', ') AS \"Detected By\",\n  time_window AS \"Time Window\",\n  avg_lat AS \"Avg Lat\",\n  avg_lon AS \"Avg Lon\"\nFROM detect_coordinated_activity($__timeFrom()::TIMESTAMPTZ, $__timeTo()::TIMESTAMPTZ, INTERVAL '5 minutes', 2)\nWHERE ('$kit_filter' = 'All' OR '$kit_filter' = ANY(kit_ids))\nORDER BY drone_count DESC, time_window DESC\nLIMIT 50;",
+          "rawSql": "-- Detect groups of drones appearing in similar locations within short time windows\nWITH recent_positions AS (\n  SELECT DISTINCT ON (drone_id)\n    drone_id, kit_id, time, lat, lon, alt, rid_make\n  FROM drones\n  WHERE time >= $__timeFrom() AND time <= $__timeTo()\n    AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n    AND lat IS NOT NULL AND lon IS NOT NULL AND track_type = 'drone'\n  ORDER BY drone_id, time DESC\n),\ntime_buckets AS (\n  SELECT \n    time_bucket('5 minutes', time) AS time_window,\n    ROUND(lat::NUMERIC, 3) AS lat_grid,\n    ROUND(lon::NUMERIC, 3) AS lon_grid,\n    COUNT(DISTINCT drone_id) AS drone_count,\n    ARRAY_AGG(DISTINCT drone_id) AS drone_ids,\n    ARRAY_AGG(DISTINCT kit_id) AS kit_ids,\n    AVG(lat) AS avg_lat,\n    AVG(lon) AS avg_lon\n  FROM recent_positions\n  GROUP BY time_bucket('5 minutes', time), ROUND(lat::NUMERIC, 3), ROUND(lon::NUMERIC, 3)\n  HAVING COUNT(DISTINCT drone_id) >= 2\n)\nSELECT \n  CONCAT('Group-', ROW_NUMBER() OVER (ORDER BY time_window DESC)) AS \"Group ID\",\n  drone_count AS \"Group Size\",\n  ARRAY_TO_STRING(drone_ids, ', ') AS \"Drone IDs\",\n  ARRAY_TO_STRING(kit_ids, ', ') AS \"Detected By\",\n  time_window AS \"Time Window\",\n  ROUND(avg_lat::NUMERIC, 5) AS \"Avg Lat\",\n  ROUND(avg_lon::NUMERIC, 5) AS \"Avg Lon\"\nFROM time_buckets\nORDER BY drone_count DESC, time_window DESC\nLIMIT 50;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -467,149 +467,6 @@
       ],
       "title": "Coordinated Activity Detection",
       "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "timescaledb"
-      },
-      "description": "Map visualization of drone positions colored by track type. Use to identify flight patterns, perimeter sweeps, and grid patterns.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 16
-      },
-      "id": 5,
-      "options": {
-        "basemap": {
-          "config": {},
-          "name": "Layer 0",
-          "type": "none"
-        },
-        "controls": {
-          "mouseWheelZoom": true,
-          "showAttribution": true,
-          "showDebug": false,
-          "showMeasure": false,
-          "showScale": false,
-          "showZoom": true
-        },
-        "layers": [
-          {
-            "config": {
-              "showLegend": true,
-              "style": {
-                "color": {
-                  "field": "track_type",
-                  "fixed": "dark-green"
-                },
-                "opacity": 0.6,
-                "rotation": {
-                  "fixed": 0,
-                  "max": 360,
-                  "min": 0,
-                  "mode": "mod"
-                },
-                "size": {
-                  "fixed": 5,
-                  "max": 15,
-                  "min": 2
-                },
-                "symbol": {
-                  "fixed": "img/icons/marker/circle.svg",
-                  "mode": "fixed"
-                },
-                "textConfig": {
-                  "fontSize": 12,
-                  "offsetX": 0,
-                  "offsetY": 0,
-                  "textAlign": "center",
-                  "textBaseline": "middle"
-                }
-              }
-            },
-            "location": {
-              "mode": "coords",
-              "coords": {
-                "latitude": "lat",
-                "longitude": "lon"
-              }
-            },
-            "name": "Drone Positions",
-            "tooltip": true,
-            "type": "markers"
-          }
-        ],
-        "tooltip": {
-          "mode": "details"
-        },
-        "view": {
-          "allLayers": true,
-          "id": "zero",
-          "lat": 0,
-          "lon": 0,
-          "zoom": 2
-        }
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "timescaledb"
-          },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT \n  time,\n  drone_id,\n  lat,\n  lon,\n  alt,\n  speed,\n  heading,\n  track_type,\n  COALESCE(rid_make, 'Unknown') AS make\nFROM drones\nWHERE time >= $__timeFrom()\n  AND time <= $__timeTo()\n  AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n  AND lat IS NOT NULL\n  AND lon IS NOT NULL\nORDER BY time DESC\nLIMIT 5000;",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "Flight Pattern Map",
-      "type": "geomap"
     }
   ],
   "refresh": "30s",

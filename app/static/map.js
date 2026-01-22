@@ -301,9 +301,9 @@ function createPopup(track, options = {}) {
         `;
     }
 
-    // Show pilot location if available
+    // Show pilot location if available (must be non-zero - 0,0 means not provided)
     let pilotInfo = '';
-    if (track.pilot_lat != null && track.pilot_lon != null) {
+    if (track.pilot_lat != null && track.pilot_lon != null && (track.pilot_lat !== 0 || track.pilot_lon !== 0)) {
         pilotInfo = `
             <div class="popup-row popup-pilot">
                 <span class="popup-label">Pilot:</span>
@@ -312,9 +312,9 @@ function createPopup(track, options = {}) {
         `;
     }
 
-    // Show home location if available
+    // Show home location if available (must be non-null AND non-zero - 0,0 means not provided)
     let homeInfo = '';
-    if (track.home_lat != null && track.home_lon != null) {
+    if (track.home_lat != null && track.home_lon != null && (track.home_lat !== 0 || track.home_lon !== 0)) {
         homeInfo = `
             <div class="popup-row popup-home">
                 <span class="popup-label">Home:</span>
@@ -472,8 +472,8 @@ function updateMap(data) {
 
             markers.push(marker);
 
-            // Add pilot location marker and line if available
-            if (showPilotLocations && track.pilot_lat != null && track.pilot_lon != null) {
+            // Add pilot location marker and line if available (must be non-zero - 0,0 means not provided)
+            if (showPilotLocations && track.pilot_lat != null && track.pilot_lon != null && (track.pilot_lat !== 0 || track.pilot_lon !== 0)) {
                 // Create pilot marker (person icon)
                 const pilotIcon = L.divIcon({
                     className: 'pilot-marker',
@@ -515,8 +515,8 @@ function updateMap(data) {
                 pilotLines.push(pilotLine);
             }
 
-            // Add home location marker and line if available
-            if (showHomeLocations && track.home_lat != null && track.home_lon != null) {
+            // Add home location marker and line if available (must be non-zero - 0,0 means not provided)
+            if (showHomeLocations && track.home_lat != null && track.home_lon != null && (track.home_lat !== 0 || track.home_lon !== 0)) {
                 // Create home marker (house icon)
                 const homeIcon = L.divIcon({
                     className: 'home-marker',
