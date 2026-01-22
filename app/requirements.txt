@@ -155,7 +155,7 @@ setproctitle==1.3.3
 # Shows descriptive names in ps/top output
 
 # Security
-cryptography==42.0.0
+cryptography==44.0.1
 # Cryptographic recipes and primitives
 # Used for TLS/SSL and secure token generation
 
