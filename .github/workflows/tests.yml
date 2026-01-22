@@ -42,7 +42,7 @@ jobs:
 
       - name: Run unit tests
         run: |
-          pytest -m unit -v --tb=short --ignore=tests/integration
+          pytest -v --tb=short --ignore=tests/integration
 
   lint:
     name: Code Quality
