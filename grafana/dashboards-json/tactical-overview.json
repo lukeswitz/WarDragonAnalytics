@@ -539,6 +539,154 @@
       ],
       "title": "Top RID Makes",
       "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "Recent drone tracks with identification details (MAC, Operator ID, Pilot/Home locations)",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "filterable": true,
+            "inspect": true
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MAC"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Operator ID"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "id": 20,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": true,
+          "enablePagination": true,
+          "fields": "",
+          "reducer": ["count"],
+          "show": true
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT DISTINCT ON (drone_id)\n  drone_id AS \"Drone ID\",\n  COALESCE(mac, '-') AS \"MAC\",\n  COALESCE(operator_id, '-') AS \"Operator ID\",\n  COALESCE(rid_make || ' ' || rid_model, 'Unknown') AS \"RID\",\n  ROUND(lat::numeric, 5) AS \"Lat\",\n  ROUND(lon::numeric, 5) AS \"Lon\",\n  CASE WHEN pilot_lat IS NOT NULL THEN ROUND(pilot_lat::numeric, 5)::text || ', ' || ROUND(pilot_lon::numeric, 5)::text ELSE '-' END AS \"Pilot Loc\",\n  CASE WHEN home_lat IS NOT NULL THEN ROUND(home_lat::numeric, 5)::text || ', ' || ROUND(home_lon::numeric, 5)::text ELSE '-' END AS \"Home Loc\",\n  time AS \"Last Seen\"\nFROM drones\nWHERE time >= NOW() - INTERVAL '1 hour'\n  AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n  AND track_type = 'drone'\nORDER BY drone_id, time DESC\nLIMIT 100;",
+          "refId": "A"
+        }
+      ],
+      "title": "Drone Identification Details",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "timescaledb"
+      },
+      "description": "Count of drones with pilot location data available",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "#EAB839",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 18,
+        "y": 0
+      },
+      "id": 21,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "timescaledb"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(DISTINCT drone_id) AS \"Pilots Located\"\nFROM drones\nWHERE time >= NOW() - INTERVAL '5 minutes'\n  AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n  AND pilot_lat IS NOT NULL\n  AND pilot_lon IS NOT NULL;",
+          "refId": "A"
+        }
+      ],
+      "title": "Pilots Located",
+      "type": "stat"
     }
   ],
   "refresh": "10s",

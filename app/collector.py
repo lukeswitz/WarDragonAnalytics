@@ -49,6 +49,8 @@ MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
 INITIAL_BACKOFF = float(os.getenv('INITIAL_BACKOFF', '5.0'))  # seconds
 MAX_BACKOFF = float(os.getenv('MAX_BACKOFF', '300.0'))  # 5 minutes
 STALE_THRESHOLD = int(os.getenv('STALE_THRESHOLD', '60'))  # seconds
+KIT_RELOAD_INTERVAL = int(os.getenv('KIT_RELOAD_INTERVAL', '30'))  # seconds - how often to check for new kits
+USE_DB_KITS = os.getenv('USE_DB_KITS', 'true').lower() == 'true'  # Use database for kit config instead of YAML
 
 # Global shutdown event
 shutdown_event = asyncio.Event()
@@ -206,7 +208,8 @@ class DatabaseWriter:
                         conn.execute(query, {
                             'time': timestamp,
                             'kit_id': kit_id,
-                            'drone_id': drone.get('drone_id') or drone.get('icao') or drone.get('mac', 'unknown'),
+                            # Priority: drone_id (explicit), id (serial from DragonSync), icao (aircraft), mac (fallback)
+                            'drone_id': drone.get('drone_id') or drone.get('id') or drone.get('icao') or drone.get('mac', 'unknown'),
                             'lat': self._safe_float(drone.get('lat')),
                             'lon': self._safe_float(drone.get('lon')),
                             'alt': self._safe_float(drone.get('alt') or drone.get('altitude')),
@@ -222,9 +225,9 @@ class DatabaseWriter:
                             'ua_type': drone.get('ua_type'),
                             'operator_id': drone.get('operator_id'),
                             'caa_id': drone.get('caa_id'),
-                            'rid_make': drone.get('rid_make') or drone.get('make'),
-                            'rid_model': drone.get('rid_model') or drone.get('model'),
-                            'rid_source': drone.get('rid_source') or drone.get('source'),
+                            'rid_make': drone.get('rid', {}).get('make') or drone.get('rid_make') or drone.get('make'),
+                            'rid_model': drone.get('rid', {}).get('model') or drone.get('rid_model') or drone.get('model'),
+                            'rid_source': drone.get('rid', {}).get('source') or drone.get('rid_source') or drone.get('source'),
                             'track_type': track_type
                         })
                         conn.commit()
@@ -348,19 +351,26 @@ class DatabaseWriter:
             logger.error(f"Failed to insert health for kit {kit_id}: {e}")
             return False
 
-    async def update_kit_status(self, kit_id: str, status: str, last_seen: datetime):
+    async def update_kit_status(self, kit_id: str, status: str, last_seen: datetime,
+                                  name: str = None, api_url: str = None, location: str = None):
         """Update kit status in kits table"""
         try:
             with self.engine.connect() as conn:
                 query = text("""
-                    INSERT INTO kits (kit_id, status, last_seen)
-                    VALUES (:kit_id, :status, :last_seen)
+                    INSERT INTO kits (kit_id, name, api_url, location, status, last_seen)
+                    VALUES (:kit_id, :name, :api_url, :location, :status, :last_seen)
                     ON CONFLICT (kit_id) DO UPDATE SET
                         status = EXCLUDED.status,
-                        last_seen = EXCLUDED.last_seen
+                        last_seen = EXCLUDED.last_seen,
+                        name = COALESCE(EXCLUDED.name, kits.name),
+                        api_url = COALESCE(EXCLUDED.api_url, kits.api_url),
+                        location = COALESCE(EXCLUDED.location, kits.location)
                 """)
                 conn.execute(query, {
                     'kit_id': kit_id,
+                    'name': name or kit_id,
+                    'api_url': api_url or 'unknown',
+                    'location': location,
                     'status': status,
                     'last_seen': last_seen
                 })
@@ -404,22 +414,80 @@ class DatabaseWriter:
             self.engine.dispose()
             logger.info("Database connection pool closed")
 
+    def fetch_kits_from_db(self) -> List[Dict]:
+        """Fetch kit configurations from the database"""
+        try:
+            with self.engine.connect() as conn:
+                # First, ensure the enabled column exists
+                try:
+                    result = conn.execute(text("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'kits' AND column_name = 'enabled'
+                        )
+                    """))
+                    has_enabled = result.scalar()
+
+                    if not has_enabled:
+                        conn.execute(text("ALTER TABLE kits ADD COLUMN enabled BOOLEAN DEFAULT TRUE"))
+                        conn.commit()
+                        logger.info("Added 'enabled' column to kits table")
+                except Exception as e:
+                    logger.warning(f"Could not check/add enabled column: {e}")
+                    has_enabled = False
+
+                # Fetch kits
+                if has_enabled:
+                    result = conn.execute(text("""
+                        SELECT kit_id, name, api_url, location, status, enabled
+                        FROM kits
+                        WHERE enabled = TRUE OR enabled IS NULL
+                        ORDER BY name
+                    """))
+                else:
+                    result = conn.execute(text("""
+                        SELECT kit_id, name, api_url, location, status
+                        FROM kits
+                        ORDER BY name
+                    """))
+
+                kits = []
+                for row in result:
+                    kit = {
+                        'id': row[0],  # kit_id
+                        'name': row[1],
+                        'api_url': row[2],
+                        'location': row[3],
+                        'status': row[4],
+                        'enabled': row[5] if has_enabled and len(row) > 5 else True
+                    }
+                    kits.append(kit)
+
+                logger.info(f"Fetched {len(kits)} enabled kits from database")
+                return kits
+        except Exception as e:
+            logger.error(f"Failed to fetch kits from database: {e}")
+            return []
+
 
 class KitCollector:
     """Handles polling and data collection for a single kit"""
 
     def __init__(self, kit_config: Dict, db: DatabaseWriter, client: httpx.AsyncClient):
-        self.kit_id = kit_config['id']
-        self.name = kit_config.get('name', self.kit_id)
+        # Config ID is used as fallback if API doesn't provide kit_id
+        self.config_id = kit_config.get('id', 'unknown')
+        self.kit_id = None  # Will be set from API /status response
+        self.name = kit_config.get('name')  # Optional friendly name
         self.api_url = kit_config['api_url'].rstrip('/')
-        self.location = kit_config.get('location', 'Unknown')
+        self.location = kit_config.get('location')
         self.enabled = kit_config.get('enabled', True)
 
         self.db = db
         self.client = client
-        self.health = KitHealth(self.kit_id)
+        self.health = None  # Created after we know the kit_id
+        self._initialized = False
 
-        logger.info(f"Initialized collector for kit {self.kit_id} ({self.name}) at {self.api_url}")
+        logger.info(f"Initialized collector for {self.api_url} (config_id: {self.config_id})")
 
     async def fetch_json(self, endpoint: str, retry: int = 0) -> Optional[Dict]:
         """Fetch JSON data from kit endpoint with retry logic"""
@@ -457,8 +525,9 @@ class KitCollector:
         drones = data if isinstance(data, list) else data.get('drones', [])
 
         if drones:
-            inserted = await self.db.insert_drones(self.kit_id, drones)
-            logger.info(f"Kit {self.kit_id}: Collected {len(drones)} drones, inserted {inserted}")
+            kit_id = self._get_kit_id()
+            inserted = await self.db.insert_drones(kit_id, drones)
+            logger.info(f"Kit {kit_id}: Collected {len(drones)} drones, inserted {inserted}")
 
         return True
 
@@ -472,22 +541,41 @@ class KitCollector:
         signals = data if isinstance(data, list) else data.get('signals', [])
 
         if signals:
-            inserted = await self.db.insert_signals(self.kit_id, signals)
-            logger.info(f"Kit {self.kit_id}: Collected {len(signals)} signals, inserted {inserted}")
+            kit_id = self._get_kit_id()
+            inserted = await self.db.insert_signals(kit_id, signals)
+            logger.info(f"Kit {kit_id}: Collected {len(signals)} signals, inserted {inserted}")
 
         return True
 
     async def poll_status(self) -> bool:
-        """Poll /status endpoint and store data"""
+        """Poll /status endpoint and store data, also extracts kit_id"""
         data = await self.fetch_json('/status')
         if data is None:
             return False
 
-        success = await self.db.insert_health(self.kit_id, data)
+        # Extract kit_id from API response (e.g., "wardragon-abc123")
+        # Check both 'kit_id' and 'uid' fields - DragonSync returns 'uid' in status response
+        api_kit_id = data.get('kit_id') or data.get('uid')
+        if api_kit_id and api_kit_id != self.kit_id:
+            old_id = self.kit_id
+            self.kit_id = api_kit_id
+            if old_id:
+                logger.info(f"Kit ID updated: {old_id} -> {self.kit_id}")
+            else:
+                logger.info(f"Kit ID discovered from API: {self.kit_id}")
+            # Update health tracker with new kit_id
+            if self.health:
+                self.health.kit_id = self.kit_id
+
+        success = await self.db.insert_health(self._get_kit_id(), data)
         if success:
-            logger.info(f"Kit {self.kit_id}: Collected system status")
+            logger.info(f"Kit {self._get_kit_id()}: Collected system status")
 
         return True
+
+    def _get_kit_id(self) -> str:
+        """Get the kit_id, falling back to config_id if not yet discovered"""
+        return self.kit_id or self.config_id
 
     async def poll_all_endpoints(self) -> bool:
         """Poll all endpoints for this kit"""
@@ -509,9 +597,41 @@ class KitCollector:
 
         return success
 
+    async def _initialize(self) -> bool:
+        """Initialize by fetching /status to discover kit_id"""
+        logger.info(f"Discovering kit_id from {self.api_url}/status...")
+
+        # Try to get kit_id from /status endpoint
+        # Check both 'kit_id' and 'uid' - DragonSync returns 'uid' in status response
+        data = await self.fetch_json('/status')
+        if data:
+            api_kit_id = data.get('kit_id') or data.get('uid')
+            if api_kit_id:
+                self.kit_id = api_kit_id
+                logger.info(f"Discovered kit_id from API: {self.kit_id}")
+            else:
+                self.kit_id = self.config_id
+                logger.warning(f"API did not provide kit_id, using config_id: {self.kit_id}")
+
+            # Store initial health data
+            await self.db.insert_health(self._get_kit_id(), data)
+        else:
+            self.kit_id = self.config_id
+            logger.warning(f"Could not reach {self.api_url}/status, using config_id: {self.kit_id}")
+
+        # Now create health tracker with the discovered kit_id
+        self.health = KitHealth(self._get_kit_id())
+        self._initialized = True
+        return True
+
     async def run(self):
         """Main polling loop for this kit"""
-        logger.info(f"Starting collector for kit {self.kit_id}")
+        # First, initialize to discover kit_id
+        if not self._initialized:
+            await self._initialize()
+
+        kit_id = self._get_kit_id()
+        logger.info(f"Starting collector for kit {kit_id}")
 
         status_poll_counter = 0
         status_interval_cycles = STATUS_POLL_INTERVAL // POLL_INTERVAL
@@ -522,6 +642,8 @@ class KitCollector:
                 continue
 
             try:
+                kit_id = self._get_kit_id()
+
                 # Poll drones and signals
                 success = await self.poll_all_endpoints()
 
@@ -531,21 +653,29 @@ class KitCollector:
                     status_success = await self.poll_status()
                     success = success or status_success
                     status_poll_counter = 0
+                    # kit_id may have been updated by poll_status
+                    kit_id = self._get_kit_id()
 
                 # Update health status
                 if success:
                     self.health.mark_success()
                     await self.db.update_kit_status(
-                        self.kit_id,
+                        kit_id,
                         self.health.status,
-                        self.health.last_seen
+                        self.health.last_seen,
+                        name=self.name or kit_id,
+                        api_url=self.api_url,
+                        location=self.location
                     )
                 else:
                     self.health.mark_failure("Failed to fetch data from any endpoint")
                     await self.db.update_kit_status(
-                        self.kit_id,
+                        kit_id,
                         self.health.status,
-                        datetime.now(timezone.utc)
+                        datetime.now(timezone.utc),
+                        name=self.name or kit_id,
+                        api_url=self.api_url,
+                        location=self.location
                     )
 
                 # Calculate next poll delay
@@ -554,7 +684,7 @@ class KitCollector:
                 else:
                     # Use exponential backoff for failed kits
                     delay = self.health.get_next_poll_delay()
-                    logger.info(f"Kit {self.kit_id}: Backing off for {delay:.1f}s")
+                    logger.info(f"Kit {kit_id}: Backing off for {delay:.1f}s")
 
                 # Wait for next poll or shutdown
                 try:
@@ -567,11 +697,11 @@ class KitCollector:
                     pass  # Normal timeout, continue polling
 
             except Exception as e:
-                logger.error(f"Kit {self.kit_id}: Unexpected error in polling loop: {e}", exc_info=True)
+                logger.error(f"Kit {kit_id}: Unexpected error in polling loop: {e}", exc_info=True)
                 self.health.mark_failure(str(e))
                 await asyncio.sleep(POLL_INTERVAL)
 
-        logger.info(f"Stopped collector for kit {self.kit_id}")
+        logger.info(f"Stopped collector for kit {kit_id}")
 
 
 class CollectorService:
@@ -580,40 +710,167 @@ class CollectorService:
     def __init__(self, config_path: str):
         self.config_path = config_path
         self.kits = []
+        self.kit_configs = {}  # Track kit configs by api_url for change detection
         self.db = None
         self.client = None
         self.tasks = []
         self.health_stats = {}
+        self._kit_lock = asyncio.Lock()  # Protect concurrent kit modifications
 
     def load_config(self) -> List[Dict]:
-        """Load kits configuration from YAML file"""
+        """Load kits configuration from YAML file and/or database.
+
+        When USE_DB_KITS is enabled (default):
+        1. Load kits from database
+        2. Also load from YAML and sync any new kits to database
+        3. Database is the source of truth for enabled/disabled state
+
+        When USE_DB_KITS is disabled:
+        1. Only use YAML file
+        """
+        yaml_kits = self._load_yaml_kits()
+
+        if not USE_DB_KITS:
+            # YAML-only mode
+            logger.info(f"Database kit management disabled, using YAML only ({len(yaml_kits)} kits)")
+            return yaml_kits
+
+        if not self.db:
+            logger.warning("Database not initialized, using YAML configuration")
+            return yaml_kits
+
+        # Database mode: sync YAML kits to database, then load from database
+        db_kits = self.db.fetch_kits_from_db()
+
+        # Sync YAML kits to database (add any that don't exist)
+        if yaml_kits:
+            self._sync_yaml_to_database(yaml_kits, db_kits)
+            # Re-fetch after sync
+            db_kits = self.db.fetch_kits_from_db()
+
+        if db_kits:
+            logger.info(f"Loaded {len(db_kits)} kits from database")
+            return db_kits
+        elif yaml_kits:
+            logger.info(f"No kits in database yet, using {len(yaml_kits)} kits from YAML")
+            return yaml_kits
+        else:
+            logger.warning("No kits configured in database or YAML. Add kits via web UI or kits.yaml")
+            return []
+
+    def _load_yaml_kits(self) -> List[Dict]:
+        """Load kits from YAML configuration file"""
         config_file = Path(self.config_path)
 
         if not config_file.exists():
-            logger.error(f"Configuration file not found: {self.config_path}")
-            raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
+            logger.debug(f"YAML config file not found: {self.config_path}")
+            return []
 
         try:
             with open(config_file, 'r') as f:
                 config = yaml.safe_load(f)
 
             kits = config.get('kits', [])
-            logger.info(f"Loaded {len(kits)} kits from configuration")
 
-            # Validate configuration
-            for kit in kits:
-                if 'id' not in kit:
-                    raise ValueError("Kit configuration missing 'id' field")
+            # Validate and normalize configuration
+            for i, kit in enumerate(kits):
                 if 'api_url' not in kit:
-                    raise ValueError(f"Kit {kit['id']} missing 'api_url' field")
+                    logger.warning(f"Kit #{i+1} in YAML missing 'api_url' field, skipping")
+                    continue
+                # 'id' is now optional - will be discovered from API
+                if 'id' not in kit:
+                    kit['id'] = f"kit-{i+1}"
 
-            return kits
+            return [k for k in kits if 'api_url' in k]
         except yaml.YAMLError as e:
             logger.error(f"Failed to parse YAML configuration: {e}")
-            raise
+            return []
         except Exception as e:
-            logger.error(f"Failed to load configuration: {e}")
-            raise
+            logger.error(f"Failed to load YAML configuration: {e}")
+            return []
+
+    def _sync_yaml_to_database(self, yaml_kits: List[Dict], db_kits: List[Dict]):
+        """Sync YAML kits to database (add new ones, don't modify existing)"""
+        db_urls = {k['api_url'] for k in db_kits}
+
+        for kit in yaml_kits:
+            api_url = kit['api_url'].rstrip('/')
+            if api_url not in db_urls and f"{api_url}/" not in db_urls:
+                # Kit not in database, add it
+                try:
+                    with self.db.engine.connect() as conn:
+                        from sqlalchemy import text
+                        conn.execute(text("""
+                            INSERT INTO kits (kit_id, name, api_url, location, status, enabled, created_at)
+                            VALUES (:kit_id, :name, :api_url, :location, 'unknown', TRUE, NOW())
+                            ON CONFLICT (kit_id) DO NOTHING
+                        """), {
+                            'kit_id': kit.get('id', f"kit-yaml-{hash(api_url) % 10000}"),
+                            'name': kit.get('name', kit.get('id', api_url)),
+                            'api_url': api_url,
+                            'location': kit.get('location')
+                        })
+                        conn.commit()
+                    logger.info(f"Synced YAML kit to database: {api_url}")
+                except Exception as e:
+                    logger.error(f"Failed to sync YAML kit to database: {e}")
+
+    async def reload_kits(self) -> Dict[str, int]:
+        """
+        Reload kit configuration from database and update collectors.
+
+        Returns:
+            Dict with counts of added, removed, and unchanged kits
+        """
+        if not USE_DB_KITS or not self.db:
+            return {'added': 0, 'removed': 0, 'unchanged': len(self.kits)}
+
+        async with self._kit_lock:
+            try:
+                # Fetch current kits from database
+                db_kits = self.db.fetch_kits_from_db()
+
+                # Build sets for comparison
+                current_urls = {k.api_url for k in self.kits}
+                new_urls = {k['api_url'] for k in db_kits}
+
+                # Find kits to add
+                to_add = [k for k in db_kits if k['api_url'] not in current_urls]
+
+                # Find kits to remove
+                to_remove = [k for k in self.kits if k.api_url not in new_urls]
+
+                stats = {'added': 0, 'removed': 0, 'unchanged': 0}
+
+                # Remove old collectors
+                for collector in to_remove:
+                    logger.info(f"Removing collector for kit {collector._get_kit_id()} ({collector.api_url})")
+                    collector.enabled = False
+                    self.kits.remove(collector)
+                    stats['removed'] += 1
+
+                # Add new collectors
+                for kit_config in to_add:
+                    kit_config['enabled'] = kit_config.get('enabled', True)
+                    if kit_config['enabled']:
+                        logger.info(f"Adding new collector for kit {kit_config.get('id', 'unknown')} ({kit_config['api_url']})")
+                        collector = KitCollector(kit_config, self.db, self.client)
+                        self.kits.append(collector)
+                        # Start the collector task
+                        task = asyncio.create_task(collector.run())
+                        self.tasks.append(task)
+                        stats['added'] += 1
+
+                stats['unchanged'] = len(self.kits) - stats['added']
+
+                if stats['added'] > 0 or stats['removed'] > 0:
+                    logger.info(f"Kit reload complete: {stats['added']} added, {stats['removed']} removed, {stats['unchanged']} unchanged")
+
+                return stats
+
+            except Exception as e:
+                logger.error(f"Failed to reload kits: {e}")
+                return {'added': 0, 'removed': 0, 'unchanged': len(self.kits), 'error': str(e)}
 
     async def start(self):
         """Start the collector service"""
@@ -621,9 +878,7 @@ class CollectorService:
         logger.info(f"Poll interval: {POLL_INTERVAL}s")
         logger.info(f"Status poll interval: {STATUS_POLL_INTERVAL}s")
         logger.info(f"Request timeout: {REQUEST_TIMEOUT}s")
-
-        # Load configuration
-        kit_configs = self.load_config()
+        logger.info(f"Dynamic kit reload: {'enabled' if USE_DB_KITS else 'disabled'} (interval: {KIT_RELOAD_INTERVAL}s)")
 
         # Initialize database
         logger.info("Initializing database connection...")
@@ -632,6 +887,9 @@ class CollectorService:
         if not self.db.test_connection():
             logger.error("Database connection test failed. Exiting.")
             sys.exit(1)
+
+        # Load configuration (now that db is initialized, can read from db)
+        kit_configs = self.load_config()
 
         # Initialize HTTP client with connection pooling
         self.client = httpx.AsyncClient(
@@ -649,10 +907,12 @@ class CollectorService:
         enabled_kits = [k for k in kit_configs if k.get('enabled', True)]
         logger.info(f"Starting collectors for {len(enabled_kits)} enabled kits")
 
+        if not enabled_kits:
+            logger.warning("No kits configured. Waiting for kits to be added via API...")
+
         for kit_config in enabled_kits:
             collector = KitCollector(kit_config, self.db, self.client)
             self.kits.append(collector)
-            self.health_stats[kit_config['id']] = collector.health
 
         # Start collector tasks
         for kit in self.kits:
@@ -665,6 +925,11 @@ class CollectorService:
         health_task = asyncio.create_task(self.monitor_health())
         self.tasks.append(health_task)
 
+        # Start kit reload task (for dynamic kit management)
+        if USE_DB_KITS:
+            reload_task = asyncio.create_task(self.kit_reload_loop())
+            self.tasks.append(reload_task)
+
         # Wait for shutdown signal
         await shutdown_event.wait()
 
@@ -673,6 +938,30 @@ class CollectorService:
         await asyncio.gather(*self.tasks, return_exceptions=True)
 
         logger.info("All collector tasks completed")
+
+    async def kit_reload_loop(self):
+        """Periodically check for kit configuration changes in the database"""
+        logger.info(f"Kit reload loop started (interval: {KIT_RELOAD_INTERVAL}s)")
+
+        while not shutdown_event.is_set():
+            try:
+                await asyncio.sleep(KIT_RELOAD_INTERVAL)
+
+                if shutdown_event.is_set():
+                    break
+
+                # Reload kits from database
+                stats = await self.reload_kits()
+
+                # Log only if there were changes
+                if stats.get('added', 0) > 0 or stats.get('removed', 0) > 0:
+                    logger.info(f"Kit configuration updated: +{stats['added']}/-{stats['removed']}")
+
+            except Exception as e:
+                logger.error(f"Error in kit reload loop: {e}")
+                await asyncio.sleep(10)  # Wait before retrying
+
+        logger.info("Kit reload loop stopped")
 
     async def monitor_health(self):
         """Periodically log health statistics for all kits"""
@@ -684,17 +973,19 @@ class CollectorService:
                     break
 
                 logger.info("=== Kit Health Status ===")
-                for kit_id, health in self.health_stats.items():
-                    health.mark_stale()
-                    stats = health.get_stats()
-                    logger.info(
-                        f"Kit {kit_id}: {stats['status']} | "
-                        f"Success rate: {stats['success_rate']} | "
-                        f"Requests: {stats['total_requests']} "
-                        f"(OK: {stats['successful_requests']}, Failed: {stats['failed_requests']})"
-                    )
-                    if stats['last_error']:
-                        logger.info(f"  Last error: {stats['last_error']}")
+                for collector in self.kits:
+                    if collector.health:
+                        kit_id = collector._get_kit_id()
+                        collector.health.mark_stale()
+                        stats = collector.health.get_stats()
+                        logger.info(
+                            f"Kit {kit_id}: {stats['status']} | "
+                            f"Success rate: {stats['success_rate']} | "
+                            f"Requests: {stats['total_requests']} "
+                            f"(OK: {stats['successful_requests']}, Failed: {stats['failed_requests']})"
+                        )
+                        if stats['last_error']:
+                            logger.info(f"  Last error: {stats['last_error']}")
                 logger.info("=" * 40)
 
             except Exception as e:

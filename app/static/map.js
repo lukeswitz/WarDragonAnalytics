@@ -25,6 +25,18 @@ let activeFilters = {
 };
 let drawnItems;
 
+// Flight path tracking
+let flightPaths = {};  // Map of drone_id -> { polyline, markers }
+let activeFlightPath = null;  // Currently displayed flight path drone_id
+
+// Pilot/Home location tracking
+let pilotMarkers = [];  // Pilot location markers
+let homeMarkers = [];   // Home location markers
+let pilotLines = [];    // Lines from drone to pilot
+let homeLines = [];     // Lines from drone to home
+let showPilotLocations = true;  // Toggle for pilot locations
+let showHomeLocations = true;   // Toggle for home locations
+
 // Kit color mapping
 const KIT_COLORS = [
     '#ff4444', '#4444ff', '#44ff44', '#ffff44', '#ff44ff', '#44ffff',
@@ -41,12 +53,25 @@ const PATTERN_COLORS = {
 
 // Initialize map
 function initMap() {
-    map = L.map('map').setView([34.05, -118.24], 12);
+    try {
+        map = L.map('map').setView([34.05, -118.24], 12);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19
-    }).addTo(map);
+        // Use OpenStreetMap tiles with offline fallback
+        // When offline, map will show gray but markers still work
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19,
+            errorTileUrl: ''  // Don't show broken tile images when offline
+        }).addTo(map);
+    } catch (e) {
+        console.error('Failed to initialize map:', e);
+        // Create a basic map container message
+        const mapDiv = document.getElementById('map');
+        if (mapDiv) {
+            mapDiv.innerHTML = '<div style="padding: 20px; color: #ff4444;">Map failed to load. Check console for errors.</div>';
+        }
+        return;
+    }
 
     // Initialize drawn items layer for geographic filtering
     drawnItems = new L.FeatureGroup();
@@ -134,7 +159,7 @@ function createMarkerIcon(color, trackType, options = {}) {
     });
 }
 
-// Add CSS for marker badges
+// Add CSS for marker badges and flight path UI
 const style = document.createElement('style');
 style.textContent = `
     .marker-wrapper { position: relative; }
@@ -157,27 +182,86 @@ style.textContent = `
     .marker-badge.watchlist { background: #00ff00; color: #1a1a1a; }
     .marker-badge.multi-kit { background: #4444ff; }
     .marker-badge.coordinated { background: #ffaa00; }
+
+    /* Flight path button styles */
+    .popup-actions {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid #444;
+    }
+    .popup-btn {
+        padding: 6px 12px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+    .flight-path-btn {
+        background: #4488ff;
+        color: white;
+        width: 100%;
+    }
+    .flight-path-btn:hover {
+        background: #3377ee;
+    }
+    .flight-path-btn.active {
+        background: #ff4444;
+    }
+    .flight-path-btn.active:hover {
+        background: #ee3333;
+    }
+    .flight-path-btn.loading {
+        background: #666;
+        cursor: wait;
+    }
+
+    /* Flight path breadcrumb markers */
+    .breadcrumb-marker {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        border: 1px solid rgba(255,255,255,0.5);
+    }
 `;
 document.head.appendChild(style);
 
-// Format time
+// Format time - with defensive checks
 function formatTime(isoString) {
     if (!isoString) return 'N/A';
-    const date = new Date(isoString);
-    return date.toLocaleTimeString();
+    try {
+        const date = new Date(isoString);
+        if (isNaN(date.getTime())) return 'N/A';
+        return date.toLocaleTimeString();
+    } catch (e) {
+        return 'N/A';
+    }
 }
 
-// Format coordinate
+// Format coordinate - with defensive checks
 function formatCoord(value, decimals = 6) {
-    return value != null ? value.toFixed(decimals) : 'N/A';
+    if (value == null || value === undefined || isNaN(value)) return 'N/A';
+    try {
+        return Number(value).toFixed(decimals);
+    } catch (e) {
+        return 'N/A';
+    }
 }
 
-// Create popup content
+// Create popup content - with defensive checks for all properties
 function createPopup(track, options = {}) {
+    // Defensive: ensure track is an object
+    if (!track || typeof track !== 'object') {
+        return '<div class="popup-title">No data available</div>';
+    }
+
     const ridMake = track.rid_make || 'Unknown';
     const ridModel = track.rid_model || 'Unknown';
     const trackType = track.track_type || 'drone';
-    const { isWatchlist = false, isAnomaly = false, anomalyTypes = [], multiKitCount = 0 } = options;
+    const droneId = track.drone_id || 'Unknown';
+    const kitId = track.kit_id || 'Unknown';
+    const { isWatchlist = false, isAnomaly = false, anomalyTypes = [], multiKitCount = 0 } = options || {};
 
     let badges = '';
     if (isWatchlist) badges += '<span class="popup-badge watchlist">Watchlist</span> ';
@@ -194,11 +278,68 @@ function createPopup(track, options = {}) {
         `;
     }
 
+    // Show MAC address if it's different from drone_id (indicates drone_id is a serial number)
+    // or always show if available for additional identification
+    let macInfo = '';
+    if (track.mac) {
+        macInfo = `
+            <div class="popup-row">
+                <span class="popup-label">MAC:</span>
+                <span class="popup-value" style="font-family: monospace; font-size: 11px;">${track.mac}</span>
+            </div>
+        `;
+    }
+
+    // Show operator ID if available
+    let operatorInfo = '';
+    if (track.operator_id) {
+        operatorInfo = `
+            <div class="popup-row">
+                <span class="popup-label">Operator ID:</span>
+                <span class="popup-value">${track.operator_id}</span>
+            </div>
+        `;
+    }
+
+    // Show pilot location if available
+    let pilotInfo = '';
+    if (track.pilot_lat != null && track.pilot_lon != null) {
+        pilotInfo = `
+            <div class="popup-row popup-pilot">
+                <span class="popup-label">Pilot:</span>
+                <span class="popup-value">${formatCoord(track.pilot_lat)}, ${formatCoord(track.pilot_lon)}</span>
+            </div>
+        `;
+    }
+
+    // Show home location if available
+    let homeInfo = '';
+    if (track.home_lat != null && track.home_lon != null) {
+        homeInfo = `
+            <div class="popup-row popup-home">
+                <span class="popup-label">Home:</span>
+                <span class="popup-value">${formatCoord(track.home_lat)}, ${formatCoord(track.home_lon)}</span>
+            </div>
+        `;
+    }
+
+    // Check if flight path is currently shown for this drone
+    const hasFlightPath = activeFlightPath === droneId;
+    const escapedDroneId = droneId.replace(/'/g, "\\'");  // Escape quotes for onclick
+    const flightPathBtn = hasFlightPath
+        ? `<button class="popup-btn flight-path-btn active" onclick="hideFlightPath('${escapedDroneId}')">Hide Flight Path</button>`
+        : `<button class="popup-btn flight-path-btn" onclick="showFlightPath('${escapedDroneId}')">Show Flight Path</button>`;
+
+    // Safe formatting for numeric values
+    const safeAlt = (track.alt != null && !isNaN(track.alt)) ? Number(track.alt).toFixed(1) : 'N/A';
+    const safeSpeed = (track.speed != null && !isNaN(track.speed)) ? Number(track.speed).toFixed(1) : 'N/A';
+    const safeRssi = track.rssi || 'N/A';
+
     return `
-        <div class="popup-title">${track.drone_id} ${badges}</div>
+        <div class="popup-title">${droneId} ${badges}</div>
         <div class="popup-row">
             <span class="popup-label">Kit:</span>
-            <span class="popup-value">${track.kit_id}</span>
+            <span class="popup-value">${kitId}</span>
         </div>
         <div class="popup-row">
             <span class="popup-label">Type:</span>
@@ -208,56 +349,114 @@ function createPopup(track, options = {}) {
             <span class="popup-label">RID:</span>
             <span class="popup-value">${ridMake} ${ridModel}</span>
         </div>
+        ${macInfo}
+        ${operatorInfo}
         <div class="popup-row">
             <span class="popup-label">Position:</span>
             <span class="popup-value">${formatCoord(track.lat)}, ${formatCoord(track.lon)}</span>
         </div>
+        ${pilotInfo}
+        ${homeInfo}
         <div class="popup-row">
             <span class="popup-label">Altitude:</span>
-            <span class="popup-value">${track.alt != null ? track.alt.toFixed(1) : 'N/A'} m</span>
+            <span class="popup-value">${safeAlt} m</span>
         </div>
         <div class="popup-row">
             <span class="popup-label">Speed:</span>
-            <span class="popup-value">${track.speed != null ? track.speed.toFixed(1) : 'N/A'} m/s</span>
+            <span class="popup-value">${safeSpeed} m/s</span>
         </div>
         <div class="popup-row">
             <span class="popup-label">RSSI:</span>
-            <span class="popup-value">${track.rssi || 'N/A'} dBm</span>
+            <span class="popup-value">${safeRssi} dBm</span>
         </div>
         <div class="popup-row">
             <span class="popup-label">Time:</span>
             <span class="popup-value">${formatTime(track.time)}</span>
         </div>
         ${anomalyInfo}
+        <div class="popup-actions">
+            ${flightPathBtn}
+        </div>
     `;
 }
 
-// Update map markers
+// Track if a popup is currently open to avoid closing it during refresh
+let openPopupDroneId = null;
+
+// Update map markers - with comprehensive defensive checks
 function updateMap(data) {
-    // Clear existing markers and lines
-    markers.forEach(marker => map.removeLayer(marker));
-    lines.forEach(line => map.removeLayer(line));
+    // Defensive: check if map is initialized
+    if (!map) {
+        console.warn('Map not initialized, skipping updateMap');
+        return;
+    }
+
+    // Defensive: ensure data is an array
+    if (!Array.isArray(data)) {
+        console.warn('updateMap received non-array data:', typeof data);
+        data = [];
+    }
+
+    // Check if a popup is open and remember which drone it belongs to
+    let reopenPopupForDrone = null;
+    markers.forEach(marker => {
+        if (marker.isPopupOpen && marker.isPopupOpen()) {
+            // Find the drone_id for this marker
+            const pos = marker.getLatLng();
+            const drone = currentData.find(d =>
+                d && Math.abs(d.lat - pos.lat) < 0.00001 && Math.abs(d.lon - pos.lng) < 0.00001
+            );
+            if (drone) {
+                reopenPopupForDrone = drone.drone_id;
+            }
+        }
+    });
+
+    // Clear existing markers and lines safely
+    try {
+        markers.forEach(marker => { try { map.removeLayer(marker); } catch(e) {} });
+        lines.forEach(line => { try { map.removeLayer(line); } catch(e) {} });
+        pilotMarkers.forEach(marker => { try { map.removeLayer(marker); } catch(e) {} });
+        homeMarkers.forEach(marker => { try { map.removeLayer(marker); } catch(e) {} });
+        pilotLines.forEach(line => { try { map.removeLayer(line); } catch(e) {} });
+        homeLines.forEach(line => { try { map.removeLayer(line); } catch(e) {} });
+    } catch (e) {
+        console.warn('Error clearing map layers:', e);
+    }
     markers = [];
     lines = [];
+    pilotMarkers = [];
+    homeMarkers = [];
+    pilotLines = [];
+    homeLines = [];
 
     // Draw pattern connections first (so they're behind markers)
-    drawPatternConnections();
+    try {
+        drawPatternConnections();
+    } catch (e) {
+        console.warn('Error drawing pattern connections:', e);
+    }
 
     // Add markers for each track
     data.forEach((track, index) => {
-        if (track.lat != null && track.lon != null) {
-            const kitIndex = kits.findIndex(k => k.kit_id === track.kit_id);
-            const color = KIT_COLORS[kitIndex % KIT_COLORS.length];
+        try {
+            // Defensive: skip invalid tracks
+            if (!track || typeof track !== 'object') return;
+            if (track.lat == null || track.lon == null || isNaN(track.lat) || isNaN(track.lon)) return;
 
-            // Check for special statuses
-            const isWatchlist = watchlist.includes(track.drone_id);
-            const anomaly = patternData.anomalies.find(a => a.drone_id === track.drone_id);
+            const kitIndex = Array.isArray(kits) ? kits.findIndex(k => k && k.kit_id === track.kit_id) : -1;
+            const color = KIT_COLORS[Math.max(0, kitIndex) % KIT_COLORS.length];
+
+            // Check for special statuses - with defensive checks
+            const droneId = track.drone_id || 'unknown';
+            const isWatchlist = Array.isArray(watchlist) && watchlist.includes(droneId);
+            const anomaly = Array.isArray(patternData.anomalies) ? patternData.anomalies.find(a => a && a.drone_id === droneId) : null;
             const isAnomaly = !!anomaly;
-            const anomalyTypes = anomaly ? anomaly.anomaly_types || [] : [];
-            const multiKit = patternData.multiKit.find(m => m.drone_id === track.drone_id);
-            const multiKitCount = multiKit ? multiKit.kit_count : 0;
-            const isCoordinated = patternData.coordinated.some(g =>
-                g.drone_ids && g.drone_ids.includes(track.drone_id)
+            const anomalyTypes = (anomaly && Array.isArray(anomaly.anomaly_types)) ? anomaly.anomaly_types : [];
+            const multiKit = Array.isArray(patternData.multiKit) ? patternData.multiKit.find(m => m && m.drone_id === droneId) : null;
+            const multiKitCount = (multiKit && multiKit.kit_count) ? multiKit.kit_count : 0;
+            const isCoordinated = Array.isArray(patternData.coordinated) && patternData.coordinated.some(g =>
+                g && Array.isArray(g.drone_ids) && g.drone_ids.includes(droneId)
             );
 
             const icon = createMarkerIcon(color, track.track_type, {
@@ -272,13 +471,118 @@ function updateMap(data) {
                 .addTo(map);
 
             markers.push(marker);
+
+            // Add pilot location marker and line if available
+            if (showPilotLocations && track.pilot_lat != null && track.pilot_lon != null) {
+                // Create pilot marker (person icon)
+                const pilotIcon = L.divIcon({
+                    className: 'pilot-marker',
+                    html: `<div style="
+                        background-color: #ff9900;
+                        border: 2px solid #cc7700;
+                        border-radius: 50%;
+                        width: 12px;
+                        height: 12px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    "><span style="font-size: 8px;">P</span></div>`,
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                });
+
+                const pilotMarker = L.marker([track.pilot_lat, track.pilot_lon], { icon: pilotIcon })
+                    .bindPopup(`
+                        <div class="popup-title">Pilot: ${track.drone_id}</div>
+                        <div class="popup-row">
+                            <span class="popup-label">Position:</span>
+                            <span class="popup-value">${formatCoord(track.pilot_lat)}, ${formatCoord(track.pilot_lon)}</span>
+                        </div>
+                    `)
+                    .addTo(map);
+                pilotMarkers.push(pilotMarker);
+
+                // Draw line from drone to pilot
+                const pilotLine = L.polyline(
+                    [[track.lat, track.lon], [track.pilot_lat, track.pilot_lon]],
+                    {
+                        color: '#ff9900',
+                        weight: 2,
+                        dashArray: '5, 5',
+                        opacity: 0.7
+                    }
+                ).addTo(map);
+                pilotLines.push(pilotLine);
+            }
+
+            // Add home location marker and line if available
+            if (showHomeLocations && track.home_lat != null && track.home_lon != null) {
+                // Create home marker (house icon)
+                const homeIcon = L.divIcon({
+                    className: 'home-marker',
+                    html: `<div style="
+                        background-color: #00cc00;
+                        border: 2px solid #009900;
+                        border-radius: 50%;
+                        width: 12px;
+                        height: 12px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    "><span style="font-size: 8px;">H</span></div>`,
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                });
+
+                const homeMarker = L.marker([track.home_lat, track.home_lon], { icon: homeIcon })
+                    .bindPopup(`
+                        <div class="popup-title">Home: ${track.drone_id}</div>
+                        <div class="popup-row">
+                            <span class="popup-label">Position:</span>
+                            <span class="popup-value">${formatCoord(track.home_lat)}, ${formatCoord(track.home_lon)}</span>
+                        </div>
+                    `)
+                    .addTo(map);
+                homeMarkers.push(homeMarker);
+
+                // Draw line from drone to home
+                const homeLine = L.polyline(
+                    [[track.lat, track.lon], [track.home_lat, track.home_lon]],
+                    {
+                        color: '#00cc00',
+                        weight: 2,
+                        dashArray: '3, 3',
+                        opacity: 0.7
+                    }
+                ).addTo(map);
+                homeLines.push(homeLine);
+            }
+        } catch (e) {
+            console.warn('Error adding marker for track:', track, e);
         }
     });
 
-    // Auto-fit bounds if markers exist
-    if (markers.length > 0) {
-        const group = L.featureGroup(markers);
-        map.fitBounds(group.getBounds().pad(0.1));
+    // Auto-fit bounds if markers exist (only on first load, not during refresh)
+    try {
+        if (markers.length > 0 && !reopenPopupForDrone) {
+            const group = L.featureGroup(markers);
+            map.fitBounds(group.getBounds().pad(0.1));
+        }
+    } catch (e) {
+        console.warn('Error fitting map bounds:', e);
+    }
+
+    // Reopen popup if one was open before refresh
+    if (reopenPopupForDrone) {
+        const droneData = data.find(d => d && d.drone_id === reopenPopupForDrone);
+        if (droneData) {
+            markers.forEach(marker => {
+                const pos = marker.getLatLng();
+                if (Math.abs(droneData.lat - pos.lat) < 0.00001 && Math.abs(droneData.lon - pos.lng) < 0.00001) {
+                    marker.openPopup();
+                }
+            });
+        }
     }
 }
 
@@ -330,6 +634,186 @@ function drawPatternConnections() {
     });
 }
 
+// =============================================================================
+// Pilot/Home Location Toggle Functions
+// =============================================================================
+
+// Toggle pilot location visibility
+function togglePilotLocations(show) {
+    showPilotLocations = show;
+    updateMap(currentData);
+}
+
+// Toggle home location visibility
+function toggleHomeLocations(show) {
+    showHomeLocations = show;
+    updateMap(currentData);
+}
+
+// =============================================================================
+// Flight Path (Breadcrumb Trail) Functions
+// =============================================================================
+
+// Show flight path for a drone
+async function showFlightPath(droneId) {
+    // Hide any existing flight path first
+    if (activeFlightPath && activeFlightPath !== droneId) {
+        hideFlightPath(activeFlightPath);
+    }
+
+    // Get the time range from the current filter
+    const timeRange = document.getElementById('time-range').value;
+
+    try {
+        // Fetch track history from API
+        const response = await fetch(`/api/drones/${encodeURIComponent(droneId)}/track?time_range=${timeRange}&limit=500`);
+        const data = await response.json();
+
+        if (!data.track || data.track.length < 2) {
+            console.log(`Not enough track points for ${droneId}`);
+            return;
+        }
+
+        // Get kit color for this drone
+        const drone = currentData.find(d => d.drone_id === droneId);
+        const kitIndex = drone ? kits.findIndex(k => k.kit_id === drone.kit_id) : 0;
+        const baseColor = KIT_COLORS[kitIndex % KIT_COLORS.length];
+
+        // Create flight path polyline
+        const trackPoints = data.track.map(p => [p.lat, p.lon]);
+        const polyline = L.polyline(trackPoints, {
+            color: baseColor,
+            weight: 3,
+            opacity: 0.8,
+            dashArray: null,  // Solid line for flight path
+            className: 'flight-path-line'
+        }).addTo(map);
+
+        // Add small circle markers for breadcrumbs (every few points to avoid clutter)
+        const breadcrumbMarkers = [];
+        const step = Math.max(1, Math.floor(data.track.length / 20));  // Max ~20 breadcrumbs
+
+        data.track.forEach((point, index) => {
+            // Skip first and last (current position already shown)
+            if (index === 0 || index === data.track.length - 1) return;
+
+            // Only show every Nth point
+            if (index % step !== 0) return;
+
+            // Calculate opacity based on age (older = more transparent)
+            const opacity = 0.3 + (0.5 * (index / data.track.length));
+
+            const breadcrumb = L.circleMarker([point.lat, point.lon], {
+                radius: 4,
+                fillColor: baseColor,
+                fillOpacity: opacity,
+                color: '#fff',
+                weight: 1,
+                opacity: opacity
+            }).addTo(map);
+
+            // Add tooltip with time
+            breadcrumb.bindTooltip(`${formatTime(point.time)}<br>Alt: ${point.alt?.toFixed(0) || 'N/A'}m`, {
+                permanent: false,
+                direction: 'top'
+            });
+
+            breadcrumbMarkers.push(breadcrumb);
+        });
+
+        // Add start point marker (green)
+        const startPoint = data.track[0];
+        const startMarker = L.circleMarker([startPoint.lat, startPoint.lon], {
+            radius: 6,
+            fillColor: '#00ff00',
+            fillOpacity: 0.9,
+            color: '#fff',
+            weight: 2
+        }).addTo(map);
+        startMarker.bindTooltip(`Start: ${formatTime(startPoint.time)}`, {
+            permanent: false,
+            direction: 'top'
+        });
+        breadcrumbMarkers.push(startMarker);
+
+        // Store flight path data
+        flightPaths[droneId] = {
+            polyline: polyline,
+            markers: breadcrumbMarkers,
+            pointCount: data.track.length
+        };
+        activeFlightPath = droneId;
+
+        // Update popup to show "Hide" button
+        updatePopupForDrone(droneId);
+
+        console.log(`Showing flight path for ${droneId}: ${data.track.length} points`);
+
+    } catch (error) {
+        console.error(`Failed to fetch flight path for ${droneId}:`, error);
+    }
+}
+
+// Hide flight path for a drone
+function hideFlightPath(droneId) {
+    const pathData = flightPaths[droneId];
+    if (pathData) {
+        // Remove polyline
+        if (pathData.polyline) {
+            map.removeLayer(pathData.polyline);
+        }
+        // Remove breadcrumb markers
+        if (pathData.markers) {
+            pathData.markers.forEach(marker => map.removeLayer(marker));
+        }
+        delete flightPaths[droneId];
+    }
+
+    if (activeFlightPath === droneId) {
+        activeFlightPath = null;
+    }
+
+    // Update popup to show "Show" button
+    updatePopupForDrone(droneId);
+
+    console.log(`Hidden flight path for ${droneId}`);
+}
+
+// Clear all flight paths
+function clearAllFlightPaths() {
+    Object.keys(flightPaths).forEach(droneId => {
+        hideFlightPath(droneId);
+    });
+    activeFlightPath = null;
+}
+
+// Update popup content for a specific drone (after showing/hiding flight path)
+function updatePopupForDrone(droneId) {
+    // Find the marker for this drone and update its popup
+    const drone = currentData.find(d => d.drone_id === droneId);
+    if (!drone) return;
+
+    markers.forEach(marker => {
+        const pos = marker.getLatLng();
+        if (Math.abs(pos.lat - drone.lat) < 0.00001 && Math.abs(pos.lng - drone.lon) < 0.00001) {
+            // Check for special statuses
+            const isWatchlist = watchlist.includes(drone.drone_id);
+            const anomaly = patternData.anomalies.find(a => a.drone_id === drone.drone_id);
+            const isAnomaly = !!anomaly;
+            const anomalyTypes = anomaly ? anomaly.anomaly_types || [] : [];
+            const multiKit = patternData.multiKit.find(m => m.drone_id === drone.drone_id);
+            const multiKitCount = multiKit ? multiKit.kit_count : 0;
+
+            // Update popup content
+            marker.setPopupContent(createPopup(drone, {
+                isWatchlist, isAnomaly, anomalyTypes, multiKitCount
+            }));
+        }
+    });
+}
+
+// =============================================================================
+
 // Update table
 function updateTable(data) {
     const tbody = document.getElementById('tracks-table');
@@ -380,15 +864,23 @@ function updateTable(data) {
     });
 }
 
-// Update stats
-function updateStats(data) {
+// Update stats - accepts optional API response with pre-computed counts
+function updateStats(data, apiResponse = null) {
+    // Use API counts if available (already deduplicated by drone_id)
+    // Otherwise count unique drone_ids from the data
+    const uniqueDroneIds = new Set(data.map(d => d.drone_id));
     const drones = data.filter(d => d.track_type === 'drone' || !d.track_type);
     const aircraft = data.filter(d => d.track_type === 'aircraft');
     const uniqueKits = new Set(data.map(d => d.kit_id));
 
-    document.getElementById('total-tracks').textContent = data.length;
-    document.getElementById('total-drones').textContent = drones.length;
-    document.getElementById('total-aircraft').textContent = aircraft.length;
+    // Count unique drone_ids within each track type
+    const uniqueDroneOnlyIds = new Set(drones.map(d => d.drone_id));
+    const uniqueAircraftIds = new Set(aircraft.map(d => d.drone_id));
+
+    // total-tracks shows total unique targets (drones + aircraft)
+    document.getElementById('total-tracks').textContent = uniqueDroneIds.size;
+    document.getElementById('total-drones').textContent = uniqueDroneOnlyIds.size;
+    document.getElementById('total-aircraft').textContent = uniqueAircraftIds.size;
     document.getElementById('active-kits').textContent = uniqueKits.size;
 }
 
@@ -571,15 +1063,29 @@ function loadWatchlist() {
     }
 }
 
-// Fetch kits
+// Fetch kits with timeout
 async function fetchKits() {
     try {
-        const response = await fetch('/api/kits');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+        const response = await fetch('/api/kits', { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
         const data = await response.json();
         kits = data.kits || [];
         updateKitCheckboxes();
     } catch (error) {
-        console.error('Failed to fetch kits:', error);
+        if (error.name === 'AbortError') {
+            console.warn('Kit fetch timed out - database may be slow');
+        } else {
+            console.error('Failed to fetch kits:', error);
+        }
+        // Keep existing kits data if we have it
     }
 }
 
@@ -722,7 +1228,7 @@ async function fetchPatterns() {
     }
 }
 
-// Fetch and update data
+// Fetch and update data - with offline/error handling
 async function fetchData() {
     try {
         showLoading(true);
@@ -730,23 +1236,45 @@ async function fetchData() {
         const { filters, showDrones, showAircraft } = getFilters();
         const params = new URLSearchParams(filters);
 
-        const response = await fetch(`/api/drones?${params}`);
-        const data = await response.json();
+        let data = { drones: [] };
+        try {
+            const response = await fetch(`/api/drones?${params}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            data = await response.json();
+        } catch (fetchError) {
+            console.warn('API fetch failed (may be offline):', fetchError.message);
+            // Don't show alert for every refresh failure, just log it
+            const lastUpdate = document.getElementById('last-update');
+            if (lastUpdate) {
+                lastUpdate.textContent = `Offline - Last update: ${new Date().toLocaleTimeString()}`;
+                lastUpdate.style.color = '#ff4444';
+            }
+            // Keep showing existing data if available
+            if (currentData.length > 0) {
+                return;
+            }
+        }
 
-        // Filter by track type
-        let filteredData = data.drones || [];
+        // Filter by track type - with defensive checks
+        let filteredData = Array.isArray(data.drones) ? data.drones : [];
         if (!showDrones && !showAircraft) {
             filteredData = [];
         } else if (!showDrones) {
-            filteredData = filteredData.filter(d => d.track_type === 'aircraft');
+            filteredData = filteredData.filter(d => d && d.track_type === 'aircraft');
         } else if (!showAircraft) {
-            filteredData = filteredData.filter(d => d.track_type !== 'aircraft');
+            filteredData = filteredData.filter(d => d && d.track_type !== 'aircraft');
         }
 
         currentData = filteredData;
 
-        // Fetch pattern data
-        await fetchPatterns();
+        // Fetch pattern data (don't fail if this errors)
+        try {
+            await fetchPatterns();
+        } catch (patternError) {
+            console.warn('Pattern fetch failed:', patternError.message);
+        }
 
         // Apply active filters
         const displayData = applyActiveFilters(currentData);
@@ -755,10 +1283,17 @@ async function fetchData() {
         updateTable(displayData);
         updateStats(currentData);
 
-        document.getElementById('last-update').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+        const lastUpdate = document.getElementById('last-update');
+        if (lastUpdate) {
+            lastUpdate.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+            lastUpdate.style.color = '';  // Reset color
+        }
     } catch (error) {
         console.error('Failed to fetch data:', error);
-        addAlert('critical', 'Data Fetch Error', 'Failed to retrieve drone data');
+        // Only show alert for unexpected errors, not network failures
+        if (error.name !== 'TypeError' && !error.message.includes('fetch')) {
+            addAlert('critical', 'Data Fetch Error', 'Failed to process drone data');
+        }
     } finally {
         showLoading(false);
     }
@@ -897,3 +1432,241 @@ window.addEventListener('beforeunload', () => {
     if (refreshTimer) clearInterval(refreshTimer);
     if (alertRefreshTimer) clearInterval(alertRefreshTimer);
 });
+
+
+// =============================================================================
+// Kit Manager Functions
+// =============================================================================
+
+function openKitManager() {
+    document.getElementById('kit-manager-modal').classList.add('active');
+    loadKitList();
+}
+
+function closeKitManager() {
+    document.getElementById('kit-manager-modal').classList.remove('active');
+    clearKitTestResult();
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('kit-manager-modal');
+    if (e.target === modal) {
+        closeKitManager();
+    }
+});
+
+// Close modal on escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeKitManager();
+    }
+});
+
+function clearKitTestResult() {
+    const resultEl = document.getElementById('kit-test-result');
+    resultEl.className = 'kit-test-result';
+    resultEl.textContent = '';
+}
+
+function showKitTestResult(message, type) {
+    const resultEl = document.getElementById('kit-test-result');
+    resultEl.className = `kit-test-result ${type}`;
+    resultEl.textContent = message;
+}
+
+async function testNewKit() {
+    const urlInput = document.getElementById('new-kit-url');
+    const apiUrl = urlInput.value.trim();
+
+    if (!apiUrl) {
+        showKitTestResult('Please enter an API URL', 'error');
+        return;
+    }
+
+    showKitTestResult('Testing connection...', 'loading');
+
+    try {
+        const response = await fetch(`/api/admin/kits/test?api_url=${encodeURIComponent(apiUrl)}`, {
+            method: 'POST'
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            let message = `Connection successful!`;
+            if (result.kit_id) {
+                message += ` Kit ID: ${result.kit_id}`;
+            }
+            if (result.response_time_ms) {
+                message += ` (${result.response_time_ms}ms)`;
+            }
+            showKitTestResult(message, 'success');
+        } else {
+            showKitTestResult(`Connection failed: ${result.message}`, 'error');
+        }
+    } catch (error) {
+        showKitTestResult(`Test failed: ${error.message}`, 'error');
+    }
+}
+
+async function addNewKit() {
+    const apiUrl = document.getElementById('new-kit-url').value.trim();
+    const name = document.getElementById('new-kit-name').value.trim();
+    const location = document.getElementById('new-kit-location').value.trim();
+
+    if (!apiUrl) {
+        showKitTestResult('Please enter an API URL', 'error');
+        return;
+    }
+
+    showKitTestResult('Adding kit...', 'loading');
+
+    try {
+        const response = await fetch('/api/admin/kits', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                api_url: apiUrl,
+                name: name || null,
+                location: location || null,
+                enabled: true
+            })
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            showKitTestResult(`Kit added successfully! ID: ${result.kit_id}`, 'success');
+            // Clear form
+            document.getElementById('new-kit-url').value = '';
+            document.getElementById('new-kit-name').value = '';
+            document.getElementById('new-kit-location').value = '';
+            // Reload kit list
+            loadKitList();
+            // Refresh main kits display
+            fetchKits();
+        } else {
+            showKitTestResult(`Failed to add kit: ${result.detail || result.message || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        showKitTestResult(`Failed to add kit: ${error.message}`, 'error');
+    }
+}
+
+async function loadKitList() {
+    const listEl = document.getElementById('kit-list');
+    listEl.innerHTML = '<div class="loading">Loading kits...</div>';
+
+    try {
+        // Add timeout to prevent hanging indefinitely
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+        const response = await fetch('/api/kits', { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.kits || data.kits.length === 0) {
+            listEl.innerHTML = `
+                <div class="kit-list-empty">
+                    <span style="font-size: 48px;">📡</span>
+                    <p>No kits configured yet. Add your first WarDragon kit above.</p>
+                </div>
+            `;
+            return;
+        }
+
+        listEl.innerHTML = '';
+        data.kits.forEach(kit => {
+            const card = createKitCard(kit);
+            listEl.appendChild(card);
+        });
+
+    } catch (error) {
+        let errorMsg = error.message;
+        if (error.name === 'AbortError') {
+            errorMsg = 'Request timed out - database may be unavailable';
+        }
+        listEl.innerHTML = `
+            <div class="kit-list-empty" style="color: #ff4444;">
+                <p>Failed to load kits: ${errorMsg}</p>
+                <button class="btn btn-secondary" onclick="loadKitList()" style="margin-top: 10px;">Retry</button>
+            </div>
+        `;
+    }
+}
+
+function createKitCard(kit) {
+    const card = document.createElement('div');
+    card.className = `kit-card ${kit.status || 'unknown'}`;
+
+    const lastSeen = kit.last_seen ? formatTime(kit.last_seen) : 'Never';
+
+    card.innerHTML = `
+        <div class="kit-info">
+            <h4>
+                ${kit.name || kit.kit_id}
+                <span class="status-badge ${kit.status || 'unknown'}">${kit.status || 'unknown'}</span>
+            </h4>
+            <div class="kit-details">
+                <span><strong>ID:</strong> ${kit.kit_id}</span>
+                <span><strong>URL:</strong> ${kit.api_url}</span>
+                ${kit.location ? `<span><strong>Location:</strong> ${kit.location}</span>` : ''}
+                <span><strong>Last Seen:</strong> ${lastSeen}</span>
+            </div>
+        </div>
+        <div class="kit-actions">
+            <button class="btn-test" onclick="testExistingKit('${kit.kit_id}')">Test</button>
+            <button class="btn-delete" onclick="deleteKit('${kit.kit_id}', '${kit.name || kit.kit_id}')">Delete</button>
+        </div>
+    `;
+
+    return card;
+}
+
+async function testExistingKit(kitId) {
+    try {
+        const response = await fetch(`/api/admin/kits/${encodeURIComponent(kitId)}/test`, {
+            method: 'POST'
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            alert(`Connection to ${kitId} successful! (${result.response_time_ms}ms)`);
+        } else {
+            alert(`Connection to ${kitId} failed: ${result.message}`);
+        }
+    } catch (error) {
+        alert(`Test failed: ${error.message}`);
+    }
+}
+
+async function deleteKit(kitId, kitName) {
+    if (!confirm(`Are you sure you want to delete kit "${kitName}"?\n\nThis will stop collecting data from this kit. Historical data will be preserved.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/admin/kits/${encodeURIComponent(kitId)}`, {
+            method: 'DELETE'
+        });
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            alert(`Kit "${kitName}" deleted successfully.`);
+            loadKitList();
+            fetchKits();
+        } else {
+            alert(`Failed to delete kit: ${result.detail || result.message || 'Unknown error'}`);
+        }
+    } catch (error) {
+        alert(`Failed to delete kit: ${error.message}`);
+    }
+}

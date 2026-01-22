@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   timescaledb:
     image: timescale/timescaledb:latest-pg15
@@ -16,7 +14,8 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     networks:
-      - wardragon-net
+      wardragon-net:
+        ipv4_address: 172.20.0.2
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wardragon -d wardragon"]
@@ -71,6 +70,12 @@ services:
     networks:
       - wardragon-net
     restart: unless-stopped
+    # Use Docker's internal DNS only - prevents hanging when no internet
+    dns:
+      - 127.0.0.11
+    extra_hosts:
+      - "timescaledb:172.20.0.2"
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import os; exit(0 if os.path.exists(\"/tmp/collector_healthy\") else 1)' || exit 1"]
       interval: 30s
@@ -104,6 +109,12 @@ services:
     networks:
       - wardragon-net
     restart: unless-stopped
+    # Use Docker's internal DNS only - prevents hanging when no internet
+    dns:
+      - 127.0.0.11
+    extra_hosts:
+      - "timescaledb:172.20.0.2"
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8090/health || exit 1"]
       interval: 30s
@@ -119,21 +130,36 @@ services:
   grafana:
     image: grafana/grafana:10.4.1
     container_name: wardragon-grafana
+    user: "472:0"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
       GF_SECURITY_SECRET_KEY: ${GRAFANA_SECRET_KEY}
-      GF_INSTALL_PLUGINS: grafana-worldmap-panel,grafana-piechart-panel
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PLUGINS_CHECK_FOR_UPDATES: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_LOG_LEVEL: ${GRAFANA_LOG_LEVEL:-info}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_DISABLE_GRAVATAR: "true"
-      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SECURE: "${GRAFANA_COOKIE_SECURE:-false}"
       GF_SECURITY_COOKIE_SAMESITE: "strict"
+      # Disable ALL external connectivity attempts for offline operation
+      GF_ANALYTICS_FEEDBACK_LINKS_ENABLED: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_LIVE_ALLOWED_ORIGINS: ""
+      GF_ENTERPRISE_LICENSE_VALIDATION_TYPE: "offline"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_RENDERING_SERVER_URL: ""
+      GF_RENDERING_CALLBACK_URL: ""
+      GF_UNIFIED_ALERTING_SCREENSHOTS_CAPTURE: "false"
       DB_PASSWORD: ${DB_PASSWORD}
+    # Use Docker's internal DNS only - prevents hanging when no internet
+    dns:
+      - 127.0.0.11
+    extra_hosts:
+      - "timescaledb:172.20.0.2"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
@@ -153,7 +179,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
-    user: "472:472"
     logging:
       driver: "json-file"
       options:
@@ -169,14 +194,4 @@ networks:
 
 volumes:
   timescale-data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${VOLUMES_PATH:-./volumes}/timescale-data
   grafana-data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${VOLUMES_PATH:-./volumes}/grafana-data

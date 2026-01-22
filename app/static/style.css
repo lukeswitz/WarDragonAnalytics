@@ -730,6 +730,21 @@ table tbody tr:hover {
     color: #fff;
 }
 
+/* Pilot/Home location styling in popup */
+.popup-pilot .popup-label {
+    color: #ff9900;
+}
+
+.popup-home .popup-label {
+    color: #00cc00;
+}
+
+/* Pilot/Home marker styles */
+.pilot-marker,
+.home-marker {
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5));
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
     width: 8px;
@@ -831,4 +846,388 @@ table tbody tr:hover {
     .threat-card-value {
         font-size: 24px;
     }
+}
+
+/* =============================================================================
+   Kit Manager Modal Styles
+   ============================================================================= */
+
+.btn-icon {
+    background: #333;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.btn-icon:hover {
+    background: #00ff00;
+    color: #1a1a1a;
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    overflow-y: auto;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.modal.active {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+.modal-content {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 8px;
+    max-width: 800px;
+    width: 100%;
+    margin: 40px auto;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.kit-manager-content {
+    max-width: 900px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid #333;
+    background: #252525;
+    border-radius: 8px 8px 0 0;
+}
+
+.modal-header h2 {
+    margin: 0;
+    color: #00ff00;
+    font-size: 18px;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+    background: #333;
+    color: #ff4444;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+/* Kit Add Section */
+.kit-add-section {
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #333;
+}
+
+.kit-add-section h3,
+.kit-list-section h3 {
+    margin: 0 0 15px 0;
+    color: #ccc;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.kit-form {
+    background: #252525;
+    padding: 15px;
+    border-radius: 6px;
+}
+
+.form-row {
+    margin-bottom: 12px;
+}
+
+.form-row label {
+    display: block;
+    color: #aaa;
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.form-row input {
+    width: 100%;
+    padding: 10px 12px;
+    background: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.form-row input:focus {
+    outline: none;
+    border-color: #00ff00;
+}
+
+.form-row input::placeholder {
+    color: #666;
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.kit-test-result {
+    margin-top: 15px;
+    padding: 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    display: none;
+}
+
+.kit-test-result.success {
+    display: block;
+    background: rgba(0, 255, 0, 0.1);
+    border: 1px solid #00ff00;
+    color: #00ff00;
+}
+
+.kit-test-result.error {
+    display: block;
+    background: rgba(255, 68, 68, 0.1);
+    border: 1px solid #ff4444;
+    color: #ff4444;
+}
+
+.kit-test-result.loading {
+    display: block;
+    background: rgba(255, 170, 0, 0.1);
+    border: 1px solid #ffaa00;
+    color: #ffaa00;
+}
+
+/* Kit List Section */
+.kit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.kit-list .loading {
+    text-align: center;
+    color: #888;
+    padding: 20px;
+}
+
+.kit-card {
+    background: #252525;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    transition: all 0.2s ease;
+}
+
+.kit-card:hover {
+    border-color: #444;
+}
+
+.kit-card.online {
+    border-left: 3px solid #00ff00;
+}
+
+.kit-card.offline {
+    border-left: 3px solid #ff4444;
+}
+
+.kit-card.stale {
+    border-left: 3px solid #ffaa00;
+}
+
+.kit-card.unknown {
+    border-left: 3px solid #888;
+}
+
+.kit-info {
+    flex: 1;
+}
+
+.kit-info h4 {
+    margin: 0 0 5px 0;
+    color: #fff;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kit-info h4 .status-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    font-weight: bold;
+}
+
+.status-badge.online {
+    background: #00ff00;
+    color: #1a1a1a;
+}
+
+.status-badge.offline {
+    background: #ff4444;
+    color: #fff;
+}
+
+.status-badge.stale {
+    background: #ffaa00;
+    color: #1a1a1a;
+}
+
+.status-badge.unknown {
+    background: #888;
+    color: #1a1a1a;
+}
+
+.kit-details {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 8px;
+}
+
+.kit-details span {
+    font-size: 12px;
+    color: #888;
+}
+
+.kit-details span strong {
+    color: #aaa;
+}
+
+.kit-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.kit-actions button {
+    padding: 6px 12px;
+    font-size: 11px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.kit-actions .btn-test {
+    background: #333;
+    border: 1px solid #4444ff;
+    color: #4444ff;
+}
+
+.kit-actions .btn-test:hover {
+    background: #4444ff;
+    color: #fff;
+}
+
+.kit-actions .btn-delete {
+    background: #333;
+    border: 1px solid #ff4444;
+    color: #ff4444;
+}
+
+.kit-actions .btn-delete:hover {
+    background: #ff4444;
+    color: #fff;
+}
+
+/* Empty state */
+.kit-list-empty {
+    text-align: center;
+    padding: 40px;
+    color: #888;
+}
+
+.kit-list-empty p {
+    margin: 10px 0 0 0;
+    font-size: 13px;
+}
+
+/* Light theme adjustments for modal */
+.light-theme .modal-content {
+    background: #fff;
+    border-color: #ddd;
+}
+
+.light-theme .modal-header {
+    background: #f5f5f5;
+    border-color: #ddd;
+}
+
+.light-theme .modal-header h2 {
+    color: #006600;
+}
+
+.light-theme .kit-form,
+.light-theme .kit-card {
+    background: #f5f5f5;
+    border-color: #ddd;
+}
+
+.light-theme .form-row input {
+    background: #fff;
+    border-color: #ccc;
+    color: #333;
+}
+
+.light-theme .kit-info h4 {
+    color: #333;
+}
+
+.light-theme .kit-details span {
+    color: #666;
+}
+
+.light-theme .kit-details span strong {
+    color: #333;
+}
+
+.light-theme .btn-icon {
+    background: #f0f0f0;
+    color: #006600;
+    border-color: #006600;
+}
+
+.light-theme .btn-icon:hover {
+    background: #006600;
+    color: #fff;
 }

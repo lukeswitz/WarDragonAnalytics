@@ -11,13 +11,14 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Response, Body
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, HttpUrl
 import asyncpg
 import csv
 import io
+import re
 
 # Configure logging
 logging.basicConfig(
@@ -149,6 +150,43 @@ class MultiKitDetection(BaseModel):
     drone_id: str
     kits: List[dict]
     triangulation_possible: bool
+
+
+# Kit Management Models
+class KitCreate(BaseModel):
+    """Model for creating a new kit"""
+    api_url: str = Field(..., description="Base URL for the kit's DragonSync API (e.g., http://192.168.1.100:8088)")
+    name: Optional[str] = Field(None, description="Human-readable name for the kit")
+    location: Optional[str] = Field(None, description="Physical location or deployment site")
+    enabled: bool = Field(True, description="Whether the kit should be actively polled")
+
+
+class KitUpdate(BaseModel):
+    """Model for updating an existing kit"""
+    api_url: Optional[str] = Field(None, description="Base URL for the kit's DragonSync API")
+    name: Optional[str] = Field(None, description="Human-readable name for the kit")
+    location: Optional[str] = Field(None, description="Physical location or deployment site")
+    enabled: Optional[bool] = Field(None, description="Whether the kit should be actively polled")
+
+
+class KitResponse(BaseModel):
+    """Model for kit response"""
+    kit_id: str
+    name: Optional[str]
+    location: Optional[str]
+    api_url: str
+    last_seen: Optional[datetime]
+    status: str
+    enabled: bool = True
+    created_at: Optional[datetime]
+
+
+class KitTestResult(BaseModel):
+    """Model for kit connection test result"""
+    success: bool
+    kit_id: Optional[str] = None
+    message: str
+    response_time_ms: Optional[float] = None
 
 
 # Startup/Shutdown events
@@ -283,19 +321,368 @@ async def list_kits(kit_id: Optional[str] = Query(None, description="Filter by s
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# =============================================================================
+# Kit Management Admin Endpoints
+# =============================================================================
+
+async def _ensure_enabled_column():
+    """Ensure the 'enabled' column exists in the kits table (migration-safe)."""
+    if not db_pool:
+        return
+    try:
+        async with db_pool.acquire() as conn:
+            # Check if column exists
+            exists = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'kits' AND column_name = 'enabled'
+                )
+            """)
+            if not exists:
+                await conn.execute("""
+                    ALTER TABLE kits ADD COLUMN enabled BOOLEAN DEFAULT TRUE
+                """)
+                logger.info("Added 'enabled' column to kits table")
+    except Exception as e:
+        logger.warning(f"Could not add enabled column (may already exist): {e}")
+
+
+async def _test_kit_connection(api_url: str) -> KitTestResult:
+    """Test connection to a kit's API and retrieve its kit_id."""
+    import httpx
+    import time
+
+    api_url = api_url.rstrip('/')
+    start_time = time.time()
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{api_url}/status")
+            response_time = (time.time() - start_time) * 1000
+
+            if response.status_code == 200:
+                data = response.json()
+                kit_id = data.get('kit_id') or data.get('uid')
+                return KitTestResult(
+                    success=True,
+                    kit_id=kit_id,
+                    message=f"Successfully connected to kit",
+                    response_time_ms=round(response_time, 2)
+                )
+            else:
+                return KitTestResult(
+                    success=False,
+                    message=f"Kit returned HTTP {response.status_code}",
+                    response_time_ms=round(response_time, 2)
+                )
+    except httpx.TimeoutException:
+        return KitTestResult(
+            success=False,
+            message="Connection timed out after 10 seconds"
+        )
+    except httpx.ConnectError as e:
+        return KitTestResult(
+            success=False,
+            message=f"Connection refused or unreachable: {str(e)}"
+        )
+    except Exception as e:
+        return KitTestResult(
+            success=False,
+            message=f"Connection failed: {str(e)}"
+        )
+
+
+def _generate_kit_id(api_url: str) -> str:
+    """Generate a temporary kit_id from the API URL."""
+    # Extract host from URL
+    match = re.search(r'://([^:/]+)', api_url)
+    if match:
+        host = match.group(1)
+        # Replace dots with dashes for cleaner ID
+        return f"kit-{host.replace('.', '-')}"
+    return f"kit-{hash(api_url) % 10000}"
+
+
+@app.post("/api/admin/kits", response_model=dict)
+async def create_kit(kit: KitCreate):
+    """
+    Add a new kit to the system.
+
+    The kit will be tested for connectivity, and if successful, will be added
+    to the database. The collector will automatically start polling this kit.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    await _ensure_enabled_column()
+
+    # Normalize URL
+    api_url = kit.api_url.rstrip('/')
+    if not api_url.startswith('http'):
+        api_url = f"http://{api_url}"
+
+    # Test connection to the kit
+    test_result = await _test_kit_connection(api_url)
+
+    # Use discovered kit_id or generate one
+    kit_id = test_result.kit_id or _generate_kit_id(api_url)
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Check if kit already exists
+            existing = await conn.fetchval(
+                "SELECT kit_id FROM kits WHERE kit_id = $1 OR api_url = $2",
+                kit_id, api_url
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Kit already exists with ID: {existing}"
+                )
+
+            # Insert the new kit
+            await conn.execute("""
+                INSERT INTO kits (kit_id, name, api_url, location, status, enabled, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            """, kit_id, kit.name or kit_id, api_url, kit.location,
+                'online' if test_result.success else 'offline', kit.enabled)
+
+        logger.info(f"Created new kit: {kit_id} ({api_url})")
+
+        return {
+            "success": True,
+            "kit_id": kit_id,
+            "message": f"Kit created successfully. {'Connection test passed.' if test_result.success else 'Warning: Initial connection test failed.'}",
+            "connection_test": test_result.dict()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to create kit: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/admin/kits/{kit_id}", response_model=dict)
+async def update_kit(kit_id: str, kit: KitUpdate):
+    """
+    Update an existing kit's configuration.
+
+    Only provided fields will be updated; null fields are ignored.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    await _ensure_enabled_column()
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Check if kit exists
+            existing = await conn.fetchrow(
+                "SELECT * FROM kits WHERE kit_id = $1", kit_id
+            )
+            if not existing:
+                raise HTTPException(status_code=404, detail=f"Kit not found: {kit_id}")
+
+            # Build update query dynamically
+            updates = []
+            params = []
+            param_idx = 1
+
+            if kit.api_url is not None:
+                api_url = kit.api_url.rstrip('/')
+                if not api_url.startswith('http'):
+                    api_url = f"http://{api_url}"
+                updates.append(f"api_url = ${param_idx}")
+                params.append(api_url)
+                param_idx += 1
+
+            if kit.name is not None:
+                updates.append(f"name = ${param_idx}")
+                params.append(kit.name)
+                param_idx += 1
+
+            if kit.location is not None:
+                updates.append(f"location = ${param_idx}")
+                params.append(kit.location)
+                param_idx += 1
+
+            if kit.enabled is not None:
+                updates.append(f"enabled = ${param_idx}")
+                params.append(kit.enabled)
+                param_idx += 1
+
+            if not updates:
+                return {"success": True, "message": "No changes requested", "kit_id": kit_id}
+
+            # Add kit_id as last parameter
+            params.append(kit_id)
+
+            query = f"UPDATE kits SET {', '.join(updates)} WHERE kit_id = ${param_idx}"
+            await conn.execute(query, *params)
+
+        logger.info(f"Updated kit: {kit_id}")
+        return {"success": True, "message": "Kit updated successfully", "kit_id": kit_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update kit: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/admin/kits/{kit_id}", response_model=dict)
+async def delete_kit(kit_id: str, delete_data: bool = Query(False, description="Also delete all drone/signal data from this kit")):
+    """
+    Remove a kit from the system.
+
+    By default, only removes the kit configuration. Use delete_data=true to
+    also remove all drone tracks and signal detections from this kit.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        async with db_pool.acquire() as conn:
+            # Check if kit exists
+            existing = await conn.fetchval(
+                "SELECT kit_id FROM kits WHERE kit_id = $1", kit_id
+            )
+            if not existing:
+                raise HTTPException(status_code=404, detail=f"Kit not found: {kit_id}")
+
+            # Optionally delete associated data
+            deleted_data = {}
+            if delete_data:
+                # Delete from drones table
+                drone_result = await conn.execute(
+                    "DELETE FROM drones WHERE kit_id = $1", kit_id
+                )
+                deleted_data['drones'] = int(drone_result.split()[-1]) if drone_result else 0
+
+                # Delete from signals table
+                signal_result = await conn.execute(
+                    "DELETE FROM signals WHERE kit_id = $1", kit_id
+                )
+                deleted_data['signals'] = int(signal_result.split()[-1]) if signal_result else 0
+
+                # Delete from system_health table
+                health_result = await conn.execute(
+                    "DELETE FROM system_health WHERE kit_id = $1", kit_id
+                )
+                deleted_data['health_records'] = int(health_result.split()[-1]) if health_result else 0
+
+            # Delete the kit
+            await conn.execute("DELETE FROM kits WHERE kit_id = $1", kit_id)
+
+        logger.info(f"Deleted kit: {kit_id} (delete_data={delete_data})")
+
+        response = {
+            "success": True,
+            "message": f"Kit {kit_id} deleted successfully",
+            "kit_id": kit_id
+        }
+        if delete_data:
+            response["deleted_data"] = deleted_data
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete kit: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/kits/test", response_model=KitTestResult)
+async def test_kit_connection(api_url: str = Query(..., description="API URL to test")):
+    """
+    Test connectivity to a kit's API without adding it.
+
+    Useful for verifying the URL before adding a new kit.
+    """
+    # Normalize URL
+    api_url = api_url.rstrip('/')
+    if not api_url.startswith('http'):
+        api_url = f"http://{api_url}"
+
+    return await _test_kit_connection(api_url)
+
+
+@app.post("/api/admin/kits/{kit_id}/test", response_model=KitTestResult)
+async def test_existing_kit(kit_id: str):
+    """
+    Test connectivity to an existing kit.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT api_url FROM kits WHERE kit_id = $1", kit_id
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Kit not found: {kit_id}")
+
+    return await _test_kit_connection(row['api_url'])
+
+
+@app.get("/api/admin/kits/reload-status")
+async def get_reload_status():
+    """
+    Check the status of kit configuration reload.
+
+    Returns information about which kits are configured and their polling status.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT kit_id, name, api_url, status, enabled, last_seen
+                FROM kits
+                ORDER BY name
+            """)
+
+        kits = []
+        for row in rows:
+            kit = dict(row)
+            kit['enabled'] = kit.get('enabled', True)
+            kits.append(kit)
+
+        return {
+            "total_kits": len(kits),
+            "enabled_kits": sum(1 for k in kits if k.get('enabled', True)),
+            "online_kits": sum(1 for k in kits if k['status'] == 'online'),
+            "kits": kits
+        }
+    except Exception as e:
+        logger.error(f"Failed to get reload status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/drones")
 async def query_drones(
     time_range: str = Query("1h", description="Time range: 1h, 24h, 7d, or custom:START,END"),
     kit_id: Optional[str] = Query(None, description="Filter by kit ID (comma-separated for multiple)"),
     rid_make: Optional[str] = Query(None, description="Filter by RID make (e.g., DJI, Autel)"),
     track_type: Optional[str] = Query(None, description="Filter by track type: drone or aircraft"),
-    limit: int = Query(1000, description="Maximum number of results", le=10000)
+    limit: int = Query(1000, description="Maximum number of results", le=10000),
+    deduplicate: bool = Query(True, description="Return only latest detection per drone_id (default: true)")
 ):
     """
     Query drone/aircraft tracks with filters.
 
+    By default, returns only the latest detection per drone_id to avoid
+    showing the same drone multiple times. Set deduplicate=false to get
+    all raw detections.
+
     Returns:
         List of drone tracks matching the filter criteria.
+        - drones: List of track records (deduplicated by default)
+        - count: Number of unique drones
+        - total_detections: Total number of raw detections in time range
     """
     if not db_pool:
         raise HTTPException(status_code=503, detail="Database unavailable")
@@ -303,48 +690,79 @@ async def query_drones(
     try:
         start_time, end_time = parse_time_range(time_range)
 
-        # Build query
-        query = """
-            SELECT
-                time, kit_id, drone_id, lat, lon, alt, speed, heading,
-                pilot_lat, pilot_lon, home_lat, home_lon, mac, rssi, freq,
-                ua_type, operator_id, caa_id, rid_make, rid_model, rid_source, track_type
-            FROM drones
-            WHERE time >= $1 AND time <= $2
-        """
+        # Build base WHERE clause
+        where_clauses = ["time >= $1 AND time <= $2"]
         params = [start_time, end_time]
         param_counter = 3
 
         # Add kit_id filter
         if kit_id:
             kit_ids = [k.strip() for k in kit_id.split(",")]
-            query += f" AND kit_id = ANY(${param_counter})"
+            where_clauses.append(f"kit_id = ANY(${param_counter})")
             params.append(kit_ids)
             param_counter += 1
 
         # Add rid_make filter
         if rid_make:
-            query += f" AND rid_make = ${param_counter}"
+            where_clauses.append(f"rid_make = ${param_counter}")
             params.append(rid_make)
             param_counter += 1
 
         # Add track_type filter
         if track_type:
-            query += f" AND track_type = ${param_counter}"
+            where_clauses.append(f"track_type = ${param_counter}")
             params.append(track_type)
             param_counter += 1
 
-        query += f" ORDER BY time DESC LIMIT ${param_counter}"
+        where_clause = " AND ".join(where_clauses)
+
+        if deduplicate:
+            # Return only the latest detection per drone_id
+            # This prevents showing the same drone 13 times
+            query = f"""
+                SELECT DISTINCT ON (drone_id)
+                    time, kit_id, drone_id, lat, lon, alt, speed, heading,
+                    pilot_lat, pilot_lon, home_lat, home_lon, mac, rssi, freq,
+                    ua_type, operator_id, caa_id, rid_make, rid_model, rid_source, track_type
+                FROM drones
+                WHERE {where_clause}
+                ORDER BY drone_id, time DESC
+                LIMIT ${param_counter}
+            """
+        else:
+            # Return all raw detections (original behavior)
+            query = f"""
+                SELECT
+                    time, kit_id, drone_id, lat, lon, alt, speed, heading,
+                    pilot_lat, pilot_lon, home_lat, home_lon, mac, rssi, freq,
+                    ua_type, operator_id, caa_id, rid_make, rid_model, rid_source, track_type
+                FROM drones
+                WHERE {where_clause}
+                ORDER BY time DESC
+                LIMIT ${param_counter}
+            """
         params.append(limit)
+
+        # Also get total detection count for the time range
+        count_query = f"""
+            SELECT
+                COUNT(*) AS total_detections,
+                COUNT(DISTINCT drone_id) AS unique_drones
+            FROM drones
+            WHERE {where_clause}
+        """
+        count_params = params[:-1]  # Exclude limit
 
         async with db_pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
+            count_row = await conn.fetchrow(count_query, *count_params)
 
         drones = [dict(row) for row in rows]
 
         return {
             "drones": drones,
-            "count": len(drones),
+            "count": count_row['unique_drones'],  # Number of unique drones
+            "total_detections": count_row['total_detections'],  # Total raw detections
             "time_range": {
                 "start": start_time.isoformat(),
                 "end": end_time.isoformat()
@@ -353,6 +771,60 @@ async def query_drones(
 
     except Exception as e:
         logger.error(f"Failed to query drones: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/drones/{drone_id}/track")
+async def get_drone_track(
+    drone_id: str,
+    time_range: str = Query("1h", description="Time range: 1h, 24h, 7d, or custom:START,END"),
+    limit: int = Query(500, description="Maximum number of track points", le=2000)
+):
+    """
+    Get track history (flight path) for a specific drone.
+
+    Returns all position records for the drone within the time range,
+    ordered chronologically for drawing a flight path polyline.
+
+    Returns:
+        - track: List of position records with time, lat, lon, alt, speed
+        - drone_id: The requested drone ID
+        - point_count: Number of track points returned
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        start_time, end_time = parse_time_range(time_range)
+
+        query = """
+            SELECT
+                time, kit_id, lat, lon, alt, speed, heading, rssi
+            FROM drones
+            WHERE drone_id = $1
+              AND time >= $2 AND time <= $3
+              AND lat IS NOT NULL AND lon IS NOT NULL
+            ORDER BY time ASC
+            LIMIT $4
+        """
+
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(query, drone_id, start_time, end_time, limit)
+
+        track = [dict(row) for row in rows]
+
+        return {
+            "drone_id": drone_id,
+            "track": track,
+            "point_count": len(track),
+            "time_range": {
+                "start": start_time.isoformat(),
+                "end": end_time.isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get drone track for {drone_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -523,7 +995,7 @@ async def get_repeated_drones(
                     lat,
                     lon
                 FROM drones
-                WHERE time >= NOW() - ($1 || ' hours')::INTERVAL
+                WHERE time >= NOW() - make_interval(hours => $1)
                     AND lat IS NOT NULL
                     AND lon IS NOT NULL
             ),
@@ -640,7 +1112,7 @@ async def get_pilot_reuse(
                     pilot_lat,
                     pilot_lon
                 FROM drones
-                WHERE time >= NOW() - ($1 || ' hours')::INTERVAL
+                WHERE time >= NOW() - make_interval(hours => $1)
                     AND operator_id IS NOT NULL
             )
             SELECT
@@ -670,7 +1142,7 @@ async def get_pilot_reuse(
                     pilot_lon,
                     time
                 FROM drones
-                WHERE time >= NOW() - ($1 || ' hours')::INTERVAL
+                WHERE time >= NOW() - make_interval(hours => $1)
                     AND pilot_lat IS NOT NULL
                     AND pilot_lon IS NOT NULL
                     AND operator_id IS NULL
@@ -762,7 +1234,7 @@ async def get_anomalies(
                     LAG(alt) OVER (PARTITION BY drone_id ORDER BY time) AS prev_alt,
                     LAG(time) OVER (PARTITION BY drone_id ORDER BY time) AS prev_time
                 FROM drones
-                WHERE time >= NOW() - ($1 || ' hours')::INTERVAL
+                WHERE time >= NOW() - make_interval(hours => $1)
                     AND track_type = 'drone'
             ),
             speed_anomalies AS (
@@ -874,7 +1346,7 @@ async def get_multi_kit_detections(
         query = """
             WITH recent_detections AS (
                 SELECT
-                    time_bucket($1 || ' minutes', time) AS bucket,
+                    time_bucket(make_interval(mins => $1), time) AS bucket,
                     drone_id,
                     kit_id,
                     lat,
@@ -886,7 +1358,7 @@ async def get_multi_kit_detections(
                     rid_make,
                     rid_model
                 FROM drones
-                WHERE time >= NOW() - ($1 || ' minutes')::INTERVAL
+                WHERE time >= NOW() - make_interval(mins => $1)
                     AND lat IS NOT NULL
                     AND lon IS NOT NULL
             ),
@@ -937,6 +1409,214 @@ async def get_multi_kit_detections(
 
     except Exception as e:
         logger.error(f"Failed to query multi-kit detections: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Security-Focused Pattern Detection Endpoints
+# =============================================================================
+
+@app.get("/api/patterns/security-alerts")
+async def get_security_alerts(
+    time_window_hours: int = Query(4, description="Time window in hours", ge=1, le=24)
+):
+    """
+    Get consolidated security alerts with threat scoring.
+
+    Combines rapid descent, night activity, low-slow patterns, and high speed
+    into a single threat assessment view.
+
+    Use cases:
+    - Prison/facility perimeter monitoring
+    - Critical infrastructure protection
+    - Neighborhood surveillance
+
+    Returns:
+        List of flagged drone activity with threat scores and levels.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        query = """
+            SELECT * FROM security_alerts
+            WHERE time >= NOW() - make_interval(hours => $1)
+            ORDER BY threat_score DESC, time DESC
+            LIMIT 500
+        """
+
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(query, time_window_hours)
+
+        alerts = [dict(row) for row in rows]
+
+        # Count by threat level
+        level_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
+        for alert in alerts:
+            level = alert.get('threat_level', 'low')
+            if level in level_counts:
+                level_counts[level] += 1
+
+        return {
+            "alerts": alerts,
+            "count": len(alerts),
+            "time_window_hours": time_window_hours,
+            "threat_summary": level_counts
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to query security alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/patterns/loitering")
+async def get_loitering_activity(
+    lat: float = Query(..., description="Center latitude of monitored area"),
+    lon: float = Query(..., description="Center longitude of monitored area"),
+    radius_m: float = Query(500, description="Radius in meters to monitor", ge=50, le=5000),
+    min_duration_minutes: int = Query(5, description="Minimum time in area to flag", ge=1, le=120),
+    time_window_hours: int = Query(24, description="Time window to search", ge=1, le=168)
+):
+    """
+    Detect drones loitering in a specific geographic area.
+
+    Useful for monitoring:
+    - Prison perimeters (contraband drops)
+    - Secure facilities (surveillance attempts)
+    - Neighborhoods (suspicious activity)
+    - Critical infrastructure
+
+    Returns:
+        List of drones that stayed within the radius for longer than min_duration.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        query = """SELECT detect_loitering($1, $2, $3, $4, $5)"""
+
+        async with db_pool.acquire() as conn:
+            result = await conn.fetchval(query, lat, lon, radius_m, min_duration_minutes, time_window_hours)
+
+        loitering = result if result else []
+
+        return {
+            "loitering_drones": loitering,
+            "count": len(loitering) if loitering else 0,
+            "search_area": {
+                "center_lat": lat,
+                "center_lon": lon,
+                "radius_m": radius_m
+            },
+            "parameters": {
+                "min_duration_minutes": min_duration_minutes,
+                "time_window_hours": time_window_hours
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to query loitering activity: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/patterns/rapid-descent")
+async def get_rapid_descent_events(
+    time_window_minutes: int = Query(60, description="Time window in minutes", ge=5, le=1440),
+    min_descent_rate_mps: float = Query(5.0, description="Minimum descent rate (m/s)", ge=1.0, le=50.0),
+    min_descent_m: float = Query(30.0, description="Minimum descent (meters)", ge=10.0, le=500.0)
+):
+    """
+    Detect rapid altitude descents that may indicate payload drops.
+
+    Common pattern for:
+    - Contraband delivery to prisons
+    - Drug drops
+    - Illegal cargo delivery
+
+    A rapid descent while hovering (low horizontal speed) is particularly suspicious.
+
+    Returns:
+        List of descent events with threat assessment.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        query = """SELECT detect_rapid_descent($1, $2, $3)"""
+
+        async with db_pool.acquire() as conn:
+            result = await conn.fetchval(query, time_window_minutes, min_descent_rate_mps, min_descent_m)
+
+        descents = result if result else []
+
+        # Count likely payload drops (rapid descent + low horizontal speed)
+        payload_drops = sum(1 for d in descents if d.get('possible_payload_drop', False)) if descents else 0
+
+        return {
+            "descent_events": descents,
+            "count": len(descents) if descents else 0,
+            "possible_payload_drops": payload_drops,
+            "parameters": {
+                "time_window_minutes": time_window_minutes,
+                "min_descent_rate_mps": min_descent_rate_mps,
+                "min_descent_m": min_descent_m
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to query rapid descent events: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/patterns/night-activity")
+async def get_night_activity(
+    time_window_hours: int = Query(24, description="Time window in hours", ge=1, le=168),
+    night_start_hour: int = Query(22, description="Hour when night begins (0-23)", ge=0, le=23),
+    night_end_hour: int = Query(5, description="Hour when night ends (0-23)", ge=0, le=23)
+):
+    """
+    Detect drone activity during night hours.
+
+    Night flights near secure facilities are often unauthorized and indicate:
+    - Contraband delivery attempts
+    - Surveillance activities
+    - Unauthorized reconnaissance
+
+    Returns:
+        List of drones active during night hours with risk assessment.
+    """
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    try:
+        query = """SELECT detect_night_activity($1, $2, $3)"""
+
+        async with db_pool.acquire() as conn:
+            result = await conn.fetchval(query, time_window_hours, night_start_hour, night_end_hour)
+
+        activity = result if result else []
+
+        # Count by risk level
+        risk_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
+        if activity:
+            for drone in activity:
+                level = drone.get('risk_level', 'low')
+                if level in risk_counts:
+                    risk_counts[level] += 1
+
+        return {
+            "night_activity": activity,
+            "count": len(activity) if activity else 0,
+            "risk_summary": risk_counts,
+            "parameters": {
+                "time_window_hours": time_window_hours,
+                "night_start_hour": night_start_hour,
+                "night_end_hour": night_end_hour
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to query night activity: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

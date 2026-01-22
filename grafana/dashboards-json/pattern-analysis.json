@@ -444,7 +444,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "-- Detect coordinated activity: multiple drones in same time window\nWITH time_windows AS (\n  SELECT \n    time_bucket('5 minutes', time) AS window,\n    COUNT(DISTINCT drone_id) AS drone_count,\n    ARRAY_AGG(DISTINCT drone_id) AS drones,\n    ARRAY_AGG(DISTINCT kit_id) AS kits,\n    MIN(time) AS start_time,\n    MAX(time) AS end_time\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n    AND ('$kit_filter' = 'All' OR kit_id = '$kit_filter')\n  GROUP BY time_bucket('5 minutes', time)\n  HAVING COUNT(DISTINCT drone_id) >= 2\n)\nSELECT \n  CONCAT('Group-', ROW_NUMBER() OVER (ORDER BY start_time DESC)) AS \"Group ID\",\n  drone_count AS \"Group Size\",\n  ARRAY_TO_STRING(drones, ', ') AS \"Drone IDs\",\n  ARRAY_TO_STRING(kits, ', ') AS \"Detected By\",\n  start_time AS \"Start Time\",\n  end_time AS \"End Time\"\nFROM time_windows\nORDER BY drone_count DESC, start_time DESC\nLIMIT 50;",
+          "rawSql": "-- Using pre-defined detect_coordinated_activity function for optimized detection\nSELECT \n  CONCAT('Group-', ROW_NUMBER() OVER (ORDER BY time_window DESC)) AS \"Group ID\",\n  drone_count AS \"Group Size\",\n  ARRAY_TO_STRING(drone_ids, ', ') AS \"Drone IDs\",\n  ARRAY_TO_STRING(kit_ids, ', ') AS \"Detected By\",\n  time_window AS \"Time Window\",\n  avg_lat AS \"Avg Lat\",\n  avg_lon AS \"Avg Lon\"\nFROM detect_coordinated_activity($__timeFrom()::TIMESTAMPTZ, $__timeTo()::TIMESTAMPTZ, INTERVAL '5 minutes', 2)\nWHERE ('$kit_filter' = 'All' OR '$kit_filter' = ANY(kit_ids))\nORDER BY drone_count DESC, time_window DESC\nLIMIT 50;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -510,7 +510,7 @@
         "basemap": {
           "config": {},
           "name": "Layer 0",
-          "type": "default"
+          "type": "none"
         },
         "controls": {
           "mouseWheelZoom": true,

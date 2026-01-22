@@ -123,7 +123,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "-- Find drones detected by multiple kits within 1-minute windows\nWITH multi_kit_detections AS (\n  SELECT \n    drone_id,\n    time_bucket('1 minute', time) AS time_window,\n    COUNT(DISTINCT kit_id) AS kit_count,\n    ARRAY_AGG(DISTINCT kit_id) AS kits,\n    ARRAY_AGG(DISTINCT CONCAT(kit_id, ':', rssi, 'dBm')) AS rssi_by_kit,\n    MAX(rssi) - MIN(rssi) AS rssi_spread,\n    AVG(lat) AS avg_lat,\n    AVG(lon) AS avg_lon,\n    ARRAY_AGG(DISTINCT COALESCE(rid_make, 'Unknown')) AS makes\n  FROM drones\n  WHERE time >= $__timeFrom()\n    AND time <= $__timeTo()\n    AND rssi IS NOT NULL\n  GROUP BY drone_id, time_bucket('1 minute', time)\n  HAVING COUNT(DISTINCT kit_id) >= 2\n)\nSELECT \n  drone_id AS \"Drone ID\",\n  kit_count AS \"Kits\",\n  ARRAY_TO_STRING(kits, ', ') AS \"Kit IDs\",\n  ARRAY_TO_STRING(rssi_by_kit, ', ') AS \"RSSI Comparison\",\n  rssi_spread AS \"RSSI Spread\",\n  ROUND(avg_lat::NUMERIC, 5) AS \"Avg Lat\",\n  ROUND(avg_lon::NUMERIC, 5) AS \"Avg Lon\",\n  time_window AS \"Time Window\",\n  ARRAY_TO_STRING(makes, ', ') AS \"Make\"\nFROM multi_kit_detections\nORDER BY kit_count DESC, time_window DESC\nLIMIT 100;",
+          "rawSql": "-- Using the pre-defined multi_kit_detections view for optimized query\nSELECT \n  drone_id AS \"Drone ID\",\n  kit_count AS \"Kits\",\n  ARRAY_TO_STRING(kit_ids, ', ') AS \"Kit IDs\",\n  ROUND(max_rssi::NUMERIC, 0) AS \"Max RSSI\",\n  ROUND(min_rssi::NUMERIC, 0) AS \"Min RSSI\",\n  ROUND((max_rssi - min_rssi)::NUMERIC, 0) AS \"RSSI Spread\",\n  ROUND(avg_rssi::NUMERIC, 0) AS \"Avg RSSI\",\n  time_bucket AS \"Time Window\",\n  latest_detection AS \"Latest Detection\",\n  CASE WHEN triangulation_possible THEN 'YES' ELSE 'NO' END AS \"Triangulation\"\nFROM multi_kit_detections\nWHERE time_bucket >= $__timeFrom()\n  AND time_bucket <= $__timeTo()\nORDER BY kit_count DESC, time_bucket DESC\nLIMIT 100;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -189,7 +189,7 @@
         "basemap": {
           "config": {},
           "name": "Layer 0",
-          "type": "default"
+          "type": "none"
         },
         "controls": {
           "mouseWheelZoom": true,

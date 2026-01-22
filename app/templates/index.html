@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WarDragon Analytics - Tactical Operations</title>
 
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Leaflet Draw CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    <!-- Leaflet CSS (local for offline operation) -->
+    <link rel="stylesheet" href="/static/vendor/leaflet.css" />
+    <!-- Leaflet Draw CSS (local for offline operation) -->
+    <link rel="stylesheet" href="/static/vendor/leaflet.draw.css" />
 
     <!-- Custom CSS -->
     <link rel="stylesheet" href="/static/style.css">
@@ -18,6 +18,7 @@
     <div class="header">
         <h1>WarDragon Analytics</h1>
         <div class="header-controls">
+            <button class="btn-icon" onclick="openKitManager()" title="Manage Kits">⚙️ Kits</button>
             <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
             <div class="status-indicator">
                 <div class="status-dot"></div>
@@ -25,6 +26,49 @@
             </div>
             <div class="status-indicator">
                 <span id="last-update">Last update: --</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Kit Manager Modal -->
+    <div id="kit-manager-modal" class="modal">
+        <div class="modal-content kit-manager-content">
+            <div class="modal-header">
+                <h2>Kit Management</h2>
+                <button class="modal-close" onclick="closeKitManager()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Add New Kit Section -->
+                <div class="kit-add-section">
+                    <h3>Add New Kit</h3>
+                    <div class="kit-form">
+                        <div class="form-row">
+                            <label for="new-kit-url">API URL *</label>
+                            <input type="text" id="new-kit-url" placeholder="http://192.168.1.100:8088" />
+                        </div>
+                        <div class="form-row">
+                            <label for="new-kit-name">Name (optional)</label>
+                            <input type="text" id="new-kit-name" placeholder="Mobile Unit Alpha" />
+                        </div>
+                        <div class="form-row">
+                            <label for="new-kit-location">Location (optional)</label>
+                            <input type="text" id="new-kit-location" placeholder="Field Operations HQ" />
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn btn-secondary" onclick="testNewKit()">Test Connection</button>
+                            <button class="btn" onclick="addNewKit()">Add Kit</button>
+                        </div>
+                        <div id="kit-test-result" class="kit-test-result"></div>
+                    </div>
+                </div>
+
+                <!-- Existing Kits Section -->
+                <div class="kit-list-section">
+                    <h3>Configured Kits</h3>
+                    <div id="kit-list" class="kit-list">
+                        <div class="loading">Loading kits...</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -103,6 +147,19 @@
                     </label>
                     <label>
                         <input type="checkbox" id="show-aircraft" checked> Aircraft
+                    </label>
+                </div>
+            </div>
+
+            <!-- Pilot/Home Locations -->
+            <div class="filter-section">
+                <label>Show Locations</label>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" id="show-pilot" checked onchange="togglePilotLocations(this.checked)"> Pilot (P)
+                    </label>
+                    <label>
+                        <input type="checkbox" id="show-home" checked onchange="toggleHomeLocations(this.checked)"> Home (H)
                     </label>
                 </div>
             </div>
@@ -224,10 +281,10 @@
         </div>
     </div>
 
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- Leaflet Draw JS -->
-    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <!-- Leaflet JS (local for offline operation) -->
+    <script src="/static/vendor/leaflet.js"></script>
+    <!-- Leaflet Draw JS (local for offline operation) -->
+    <script src="/static/vendor/leaflet.draw.js"></script>
 
     <!-- Custom JS -->
     <script src="/static/map.js"></script>

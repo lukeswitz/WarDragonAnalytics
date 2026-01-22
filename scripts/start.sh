@@ -35,19 +35,24 @@ echo -e "${BLUE}WarDragon Analytics - Starting Services${NC}"
 echo "=========================================="
 echo ""
 
-# Check if docker-compose exists
-if ! command -v docker-compose &> /dev/null && ! command -v docker &> /dev/null; then
-    echo -e "${RED}Error: docker-compose or docker command not found${NC}"
-    echo "Please install Docker and Docker Compose first."
+# Find docker command
+DOCKER_CMD=""
+if command -v docker &> /dev/null; then
+    DOCKER_CMD="docker"
+elif [ -x /usr/bin/docker ]; then
+    DOCKER_CMD="/usr/bin/docker"
+elif [ -x /usr/local/bin/docker ]; then
+    DOCKER_CMD="/usr/local/bin/docker"
+fi
+
+if [ -z "$DOCKER_CMD" ]; then
+    echo -e "${RED}Error: docker command not found${NC}"
+    echo "Please install Docker first."
     exit 1
 fi
 
-# Determine docker compose command
-if command -v docker-compose &> /dev/null; then
-    DOCKER_COMPOSE="docker-compose"
-else
-    DOCKER_COMPOSE="docker compose"
-fi
+# Use modern 'docker compose' syntax
+DOCKER_COMPOSE="$DOCKER_CMD compose"
 
 # Check for docker-compose.yml
 if [ ! -f "docker-compose.yml" ]; then

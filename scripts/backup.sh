@@ -38,18 +38,22 @@ echo -e "${BLUE}WarDragon Analytics - Database Backup${NC}"
 echo "=========================================="
 echo ""
 
-# Check if docker-compose exists
-if ! command -v docker-compose &> /dev/null && ! command -v docker &> /dev/null; then
-    echo -e "${RED}Error: docker-compose or docker command not found${NC}"
+# Find docker command
+DOCKER_CMD=""
+if command -v docker &> /dev/null; then
+    DOCKER_CMD="docker"
+elif [ -x /usr/bin/docker ]; then
+    DOCKER_CMD="/usr/bin/docker"
+elif [ -x /usr/local/bin/docker ]; then
+    DOCKER_CMD="/usr/local/bin/docker"
+fi
+
+if [ -z "$DOCKER_CMD" ]; then
+    echo -e "${RED}Error: docker command not found${NC}"
     exit 1
 fi
 
-# Determine docker compose command
-if command -v docker-compose &> /dev/null; then
-    DOCKER_COMPOSE="docker-compose"
-else
-    DOCKER_COMPOSE="docker compose"
-fi
+DOCKER_COMPOSE="$DOCKER_CMD compose"
 
 # Check if .env exists
 if [ ! -f ".env" ]; then
@@ -93,7 +97,7 @@ if [ $? -eq 0 ] && [ -f "$BACKUP_FILE" ]; then
     echo "Size: $BACKUP_SIZE"
     echo ""
     echo "To restore this backup:"
-    echo "  gunzip -c $BACKUP_FILE | docker-compose exec -T timescaledb psql -U wardragon -d wardragon"
+    echo "  gunzip -c $BACKUP_FILE | docker compose exec -T timescaledb psql -U wardragon -d wardragon"
     echo ""
 else
     echo -e "${RED}Backup failed!${NC}"

@@ -28,12 +28,13 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 
-# IMPORTANT: Update this path to your installation directory
-WorkingDirectory=/opt/wardragon-analytics
+# IMPORTANT: Update this path to where you installed WarDragonAnalytics
+# Example: /home/youruser/WarDragonAnalytics
+WorkingDirectory=/home/wardragon/WarDragonAnalytics
 
 # Use production compose file
-ExecStart=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-ExecStop=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.prod.yml down
 
 # Restart policy
 Restart=on-failure
@@ -45,7 +46,8 @@ User=wardragon
 Group=wardragon
 
 # Environment file
-EnvironmentFile=/opt/wardragon-analytics/.env
+# Update this path to match WorkingDirectory above
+EnvironmentFile=/home/wardragon/WarDragonAnalytics/.env
 
 # Logging
 StandardOutput=journal

@@ -17,23 +17,28 @@ echo "  WarDragon Analytics Quick Start"
 echo "=========================================="
 echo -e "${NC}"
 
-# Check prerequisites
-echo "Checking prerequisites..."
+# Find docker command
+DOCKER_CMD=""
+if command -v docker &> /dev/null; then
+    DOCKER_CMD="docker"
+elif [ -x /usr/bin/docker ]; then
+    DOCKER_CMD="/usr/bin/docker"
+elif [ -x /usr/local/bin/docker ]; then
+    DOCKER_CMD="/usr/local/bin/docker"
+fi
 
-if ! command -v docker &> /dev/null; then
+if [ -z "$DOCKER_CMD" ]; then
     echo -e "${RED}ERROR: Docker not found${NC}"
     echo "Please install Docker first: https://docs.docker.com/engine/install/"
     exit 1
 fi
 
-if ! command -v docker-compose &> /dev/null; then
-    echo -e "${RED}ERROR: docker-compose not found${NC}"
-    echo "Please install docker-compose: https://docs.docker.com/compose/install/"
-    exit 1
-fi
+DOCKER_COMPOSE="$DOCKER_CMD compose"
 
-echo -e "${GREEN}✓ Docker found${NC}"
-echo -e "${GREEN}✓ docker-compose found${NC}"
+# Check prerequisites
+echo "Checking prerequisites..."
+echo -e "${GREEN}[OK] Docker found${NC}"
+echo -e "${GREEN}[OK] docker compose found${NC}"
 echo ""
 
 # Create .env if it doesn't exist
@@ -41,10 +46,10 @@ if [ ! -f .env ]; then
     echo "Creating .env file..."
     cp .env.example .env
 
-    # Generate passwords
+    # Generate passwords (URL-safe: no +, /, = characters that break DB connection strings)
     echo "Generating secure passwords..."
-    DB_PASS=$(openssl rand -base64 32)
-    GRAFANA_PASS=$(openssl rand -base64 32)
+    DB_PASS=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')
+    GRAFANA_PASS=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')
     GRAFANA_SECRET=$(openssl rand -base64 32)
 
     # Update .env
@@ -52,7 +57,7 @@ if [ ! -f .env ]; then
     sed -i "s|CHANGEME_GRAFANA_PASSWORD_HERE|$GRAFANA_PASS|" .env
     sed -i "s|CHANGEME_GRAFANA_SECRET_KEY_HERE|$GRAFANA_SECRET|" .env
 
-    echo -e "${GREEN}✓ .env file created with secure passwords${NC}"
+    echo -e "${GREEN}[OK] .env file created with secure passwords${NC}"
     echo ""
     echo -e "${YELLOW}IMPORTANT: Save these credentials!${NC}"
     echo "Grafana Admin Password: $GRAFANA_PASS"
@@ -66,7 +71,7 @@ fi
 echo "Creating directories..."
 mkdir -p volumes/timescale-data volumes/grafana-data logs/collector config
 chmod 700 volumes/timescale-data volumes/grafana-data
-echo -e "${GREEN}✓ Directories created${NC}"
+echo -e "${GREEN}[OK] Directories created${NC}"
 echo ""
 
 # Check if kits.yaml exists
@@ -79,20 +84,20 @@ fi
 
 # Pull images
 echo "Pulling Docker images (this may take a few minutes)..."
-docker-compose pull
+$DOCKER_COMPOSE pull
 
 # Build application containers
 echo "Building application containers..."
-docker-compose build
+$DOCKER_COMPOSE build
 
-echo -e "${GREEN}✓ Docker images ready${NC}"
+echo -e "${GREEN}[OK] Docker images ready${NC}"
 echo ""
 
 # Start services
 echo "Starting services..."
-docker-compose up -d
+$DOCKER_COMPOSE up -d
 
-echo -e "${GREEN}✓ Services started${NC}"
+echo -e "${GREEN}[OK] Services started${NC}"
 echo ""
 
 # Wait for services to be healthy
@@ -102,8 +107,8 @@ sleep 10
 TIMEOUT=60
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
-    if docker exec wardragon-timescaledb pg_isready -U wardragon &> /dev/null; then
-        echo -e "${GREEN}✓ TimescaleDB is healthy${NC}"
+    if $DOCKER_CMD exec wardragon-timescaledb pg_isready -U wardragon &> /dev/null; then
+        echo -e "${GREEN}[OK] TimescaleDB is healthy${NC}"
         break
     fi
     sleep 5
@@ -113,14 +118,14 @@ done
 
 if [ $ELAPSED -ge $TIMEOUT ]; then
     echo -e "${RED}WARNING: TimescaleDB did not become healthy within timeout${NC}"
-    echo "Check logs: docker-compose logs timescaledb"
+    echo "Check logs: $DOCKER_COMPOSE logs timescaledb"
 fi
 
 echo ""
 
 # Display status
 echo "Checking service status..."
-docker-compose ps
+$DOCKER_COMPOSE ps
 echo ""
 
 # Display access information
@@ -140,7 +145,7 @@ echo "  Password: (check .env file or output above)"
 echo ""
 echo "Next Steps:"
 echo "  1. Edit config/kits.yaml to add your WarDragon kits"
-echo "  2. Restart collector: docker-compose restart collector"
+echo "  2. Restart collector: $DOCKER_COMPOSE restart collector"
 echo "  3. Access Grafana and configure dashboards"
 echo "  4. Review DEPLOYMENT.md for production setup"
 echo ""
