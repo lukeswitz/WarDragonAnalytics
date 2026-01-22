@@ -67,7 +67,7 @@ passlib[bcrypt]==1.7.4
 # Password hashing library
 # Used when authentication feature is enabled
 
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]>=3.4.0
 # JWT token handling
 # Used for API authentication in Phase 4
 
