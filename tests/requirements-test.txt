@@ -60,7 +60,7 @@ faker==22.6.0
 # Useful for generating realistic test data
 
 # Code quality
-black==24.1.1
+black==24.3.0
 # Code formatter
 # Run with: black .
 
