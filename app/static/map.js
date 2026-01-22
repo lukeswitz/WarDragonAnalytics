@@ -325,7 +325,9 @@ function createPopup(track, options = {}) {
 
     // Check if flight path is currently shown for this drone
     const hasFlightPath = activeFlightPath === droneId;
-    const escapedDroneId = droneId.replace(/'/g, "\\'");  // Escape quotes for onclick
+    const escapedDroneId = String(droneId)
+        .replace(/\\/g, '\\\\')   // Escape backslashes for JS string literal
+        .replace(/'/g, '\\\'');   // Escape single quotes for onclick
     const flightPathBtn = hasFlightPath
         ? `<button class="popup-btn flight-path-btn active" onclick="hideFlightPath('${escapedDroneId}')">Hide Flight Path</button>`
         : `<button class="popup-btn flight-path-btn" onclick="showFlightPath('${escapedDroneId}')">Show Flight Path</button>`;
