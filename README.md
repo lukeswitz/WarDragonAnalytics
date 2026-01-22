@@ -1,12 +1,15 @@
 # WarDragon Analytics
 
+[![CodeQL Advanced](https://github.com/lukeswitz/WarDragonAnalytics/actions/workflows/codeql.yml/badge.svg)](https://github.com/lukeswitz/WarDragonAnalytics/actions/workflows/codeql.yml)
+[![Dependabot Updates](https://github.com/lukeswitz/WarDragonAnalytics/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/lukeswitz/WarDragonAnalytics/actions/workflows/dependabot/dependabot-updates)
+
 Centralized logging, analysis, and visualization platform for drone detection data from one or more WarDragon kits running [DragonSync](https://github.com/alphafox02/DragonSync).
 
 **Important:** This is designed to run on a separate server or workstation, not on the WarDragon kit itself. While it can technically run on a kit, the resource overhead (TimescaleDB, Grafana) is better suited for a dedicated machine. For lightweight on-kit history, a future integration with the WarDragon ATAK Plugin is planned to provide historical track data directly to TAK users without requiring a full analytics stack.
 
 ## Overview
 
-WarDragon Analytics aggregates Remote ID drone detections, ADS-B aircraft tracks, and FPV signal detections from multiple WarDragon field kits into a single interface. It provides:
+WarDragon Analytics aggregates DroneID/Remote ID drone detections, ADS-B aircraft tracks, and FPV signal detections from multiple WarDragon field kits into a single interface. It provides:
 
 - **Real-time map display** of all drone and aircraft tracks across all kits
 - **Time-series database** (TimescaleDB) with 30-day retention and 1-year aggregates
