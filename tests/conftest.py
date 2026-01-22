@@ -317,17 +317,21 @@ def reset_module_state():
     This fixture automatically runs for each test to ensure
     clean state, particularly for the global shutdown_event.
     """
-    import app.collector as collector_module
+    try:
+        import app.collector as collector_module
 
-    # Reset shutdown event
-    if hasattr(collector_module, 'shutdown_event'):
-        collector_module.shutdown_event.clear()
+        # Reset shutdown event
+        if hasattr(collector_module, 'shutdown_event'):
+            collector_module.shutdown_event.clear()
 
-    yield
+        yield
 
-    # Cleanup after test
-    if hasattr(collector_module, 'shutdown_event'):
-        collector_module.shutdown_event.clear()
+        # Cleanup after test
+        if hasattr(collector_module, 'shutdown_event'):
+            collector_module.shutdown_event.clear()
+    except ImportError:
+        # Collector module may not be importable in all environments
+        yield
 
 
 @pytest.fixture
