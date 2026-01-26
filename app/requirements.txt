@@ -58,7 +58,7 @@ jinja2==3.1.6
 # Template engine for HTML rendering
 # Used for web UI dashboard pages
 
-python-multipart==0.0.18
+python-multipart==0.0.22
 # Multipart form parsing for FastAPI
 # Required for file uploads and form handling
 
